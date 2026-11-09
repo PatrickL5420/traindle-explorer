@@ -6,8 +6,9 @@ are grouped into **tiers** that are tried in order, and each solution's tier dou
 difficulty rating. Every output is valid under the real game's rules (mathjs 15.2,
 `Waffles-traindle/shared/gameUtils.ts`).
 
-**Default game:** all 10000 numbers solved in ~29 s on an i7-12700K (20 threads), peak memory
-~1.3 GB. 5 digits (100,000 puzzles) takes ~22 s. Every solution is checked in 256-bit precision
+**Default game:** all 10000 numbers solved in ~35 s on an i7-12700K (20 threads; ~30 s with a
+[native-CPU build](#faster-builds-for-your-own-cpu)), peak memory ~1.3 GB. 5 digits (100,000
+puzzles) takes ~22 s. Every solution is checked in 256-bit precision
 and by mathjs itself.
 
 | tier | features (default) | 4 digits → 10 |
@@ -16,8 +17,8 @@ and by mathjs itself.
 | 2 | brackets (nested) | 1537 |
 | 3 | `^` | 1028 |
 | 4 | concatenation (joining digits, e.g. `12`) | 364 |
-| 5 | `!` | 1438 |
-| 6 | `%` (modulo) | 249 |
+| 5 | `!` | 1405 |
+| 6 | `%` (modulo) | 282 |
 | 7 | `sqrt()` | 18 |
 | 8 | `cbrt()` | 1 |
 | 9–10 | `combinations()`, `permutations()` | 0 |
@@ -30,6 +31,34 @@ the expression needs.
 Literal rules: joined digits need the concatenation feature, and a multi-digit literal may not
 start with 0 (`06` is just `0 + 6` in disguise). Each joined digit costs a little (weight
 `concat`, default 4, below every operator).
+
+## Requirements
+
+- **Rust** (stable, via [rustup](https://rustup.rs)) with a C compiler for the `mimalloc` allocator:
+  - Windows: the MSVC build tools (installed by rustup).
+  - macOS: `xcode-select --install`.
+  - Linux: `build-essential` or equivalent.
+- **Node.js 18+**: only for the command-line verifiers in `verify/`. The web UI verifies in the
+  browser and loads mathjs from the CDN when `verify/node_modules` is missing.
+- About 2 GB of free RAM for the default game, more for deep tiers on 5 digits.
+
+Linux, macOS and Windows are built and tested in CI (`.github/workflows/ci.yml`).
+
+Run the binary from the repository root. `runs/`, `output/` and the optional `web/` and
+`verify/node_modules` overrides are looked up relative to the current directory. The page itself
+is embedded, so the server also works from elsewhere.
+
+### Faster builds for your own CPU
+
+The default build is portable. To optimise for the machine you build on (about 15% faster here,
+with identical results), add the flag:
+
+```bash
+RUSTFLAGS="-C target-cpu=native" cargo build --release          # bash / zsh
+$env:RUSTFLAGS="-C target-cpu=native"; cargo build --release    # PowerShell
+```
+
+A binary built this way may crash with "illegal instruction" on other CPUs, so don't share it.
 
 ## Web UI
 

@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      BIN: target/release/traindle-explorer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: verify/package-lock.json
+
+      - name: Unit tests
+        run: cargo test --release
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Install the mathjs verifier
+        working-directory: verify
+        run: npm ci
+
+      # Rust's float semantics must match mathjs (the game's evaluator) on every platform
+      - name: Renderer + semantics fuzz vs mathjs
+        run: |
+          $BIN --emit-expr-tests 5000
+          node verify/exprcheck.mjs output/expr_tests.json
+
+      - name: Solve 3 digits -> 24 and verify every solution with mathjs
+        run: |
+          $BIN --digits 3 --target 24
+          node verify/verify.mjs output/solutions.json
+
+      # the hardest puzzles of the real game need trig; all must be solved and valid
+      - name: Solve the hard 4-digit puzzles and verify
+        run: |
+          $BIN --only 0000,0067,0201
+          node verify/verify.mjs output/solutions.json
+          node -e 'const s=require("./output/summary.json"); if (s.unsolved_count) { console.error("unsolved:", s.unsolved); process.exit(1) }'
+
+      - name: Web server smoke test
+        run: |
+          $BIN serve --no-open --port 7878 --runs-dir "$RUNNER_TEMP/runs" &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:7878/api/defaults > /dev/null && break; sleep 1; done
+          curl -sf http://127.0.0.1:7878/ | grep -q "Traindle Explorer"
+          curl -sf http://127.0.0.1:7878/api/defaults | grep -q '"max_digits"'
+          curl -sf http://127.0.0.1:7878/verify-core.js > /dev/null
+          kill %1 || true

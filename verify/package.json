@@ -7,6 +7,9 @@
     "verify": "node verify.mjs ../output/solutions.json",
     "exprcheck": "node exprcheck.mjs ../output/expr_tests.json"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "mathjs": "15.2.0"
   }
