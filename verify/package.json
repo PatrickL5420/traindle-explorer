@@ -1,0 +1,13 @@
+{
+  "name": "traindle-explorer-verify",
+  "private": true,
+  "type": "module",
+  "description": "Checks solver output against the real game rules (mathjs 15.2)",
+  "scripts": {
+    "verify": "node verify.mjs ../output/solutions.json",
+    "exprcheck": "node exprcheck.mjs ../output/expr_tests.json"
+  },
+  "dependencies": {
+    "mathjs": "15.2.0"
+  }
+}

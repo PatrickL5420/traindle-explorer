@@ -1,0 +1,5 @@
+# Normalise line endings in the repo (LF), whatever core.autocrlf says locally
+* text=auto eol=lf
+
+*.png binary
+*.ico binary

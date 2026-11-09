@@ -1,0 +1,1663 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traindle Explorer</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --accent-ink: #ffffff;
+  --critical: #d03b3b;
+  --harder: #d93b3b;
+  --easier: #2a78d6;
+  --good: #006300;
+  --focus: #0b0b0b;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #232321;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-ink: #ffffff;
+    --good: #0ca30c;
+    --focus: #f0efec;
+    --shadow: none;
+    --harder: #e66767;
+    --easier: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --ink: #f0efec; --ink-2: #c3c2b7;
+  --muted: #898781; --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --accent: #3987e5; --accent-ink: #ffffff; --good: #0ca30c; --focus: #f0efec; --shadow: none;
+  --harder: #e66767; --easier: #3987e5;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+button, input, select { font: inherit; color: inherit; }
+.mono, code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; }
+header {
+  display: flex; align-items: center; gap: 12px; padding: 12px 20px;
+  border-bottom: 1px solid var(--border); background: var(--surface);
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header .sub { color: var(--muted); font-size: 13px; }
+.layout {
+  display: grid; grid-template-columns: minmax(330px, 400px) minmax(0, 1fr);
+  gap: 16px; padding: 16px 20px; align-items: start;
+}
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 12px 16px; } }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; box-shadow: var(--shadow); min-width: 0;
+}
+.card h2 { font-size: 14px; margin: 0 0 10px; font-weight: 650; }
+.card h3 { font-size: 13px; margin: 14px 0 6px; font-weight: 600; color: var(--ink-2); }
+label.field { display: grid; gap: 4px; margin-bottom: 10px; color: var(--ink-2); font-size: 13px; }
+input[type=text], input[type=number], input[type=search] {
+  border: 1px solid var(--axis); border-radius: 6px; padding: 6px 8px; background: var(--surface); width: 100%;
+}
+input:focus-visible, button:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row2 { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: end; }
+.field { display: grid; gap: 4px; color: var(--ink-2); font-size: 13px; margin-bottom: 10px; }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 11px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--axis); }
+.seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
+button.btn {
+  border: 1px solid var(--axis); background: var(--surface); border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+button.btn:hover { background: var(--surface-2); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; }
+button.primary:hover { background: var(--accent); filter: brightness(1.08); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.link { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 2px 4px; }
+button.icon, a.icon { border: 0; background: none; cursor: pointer; color: var(--muted); padding: 3px; border-radius: 4px; display: inline-flex; }
+button.icon:hover, a.icon:hover { color: var(--ink); background: var(--surface-2); }
+button.icon:disabled { opacity: .3; }
+.ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; flex: none; }
+.ic.info { width: 14px; height: 14px; color: var(--muted); cursor: help; vertical-align: -2px; }
+.ibtn { border: 1px solid var(--axis); background: var(--surface); border-radius: 6px; width: 30px; height: 30px; display: inline-grid; place-items: center; cursor: pointer; color: var(--ink-2); padding: 0; }
+.ibtn:hover { background: var(--surface-2); color: var(--ink); }
+.sechead { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 6px; }
+.sechead h3 { margin: 0; }
+.sechead .tools { display: flex; gap: 6px; align-items: center; }
+.sechead select, .finder select { border: 1px solid var(--axis); border-radius: 6px; padding: 4px 6px; background: var(--surface); height: 30px; }
+.diffstat { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; font-variant-numeric: tabular-nums; cursor: help; }
+.diffstat .plus { color: var(--harder); }
+.diffstat .minus { color: var(--easier); }
+.diffstat .blocks { display: inline-flex; gap: 1px; }
+.diffstat .blocks i { width: 8px; height: 8px; border-radius: 1px; background: var(--grid); }
+.diffstat .blocks i.p { background: var(--harder); }
+.diffstat .blocks i.m { background: var(--easier); }
+.meta { color: var(--ink-2); font-size: 13px; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+
+/* tier editor */
+.tiers { display: flex; flex-direction: column; gap: 6px; }
+.tier {
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface-2);
+}
+.tier.drop { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.tier .thead { display: flex; align-items: center; gap: 6px; }
+.tier .tnum { font-weight: 650; font-size: 12px; min-width: 26px; color: var(--ink-2); }
+.tier input.tname { border: 0; background: transparent; padding: 2px 4px; width: auto; flex: 1; min-width: 0; color: var(--ink-2); font-size: 12px; }
+.tier input.tname:hover, .tier input.tname:focus { background: var(--surface); }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; min-height: 26px; padding-top: 4px; }
+.chips:empty::after { content: "drop features here"; color: var(--muted); font-size: 12px; padding: 3px 2px; }
+.chip {
+  border: 1px solid var(--axis); background: var(--surface); border-radius: 999px; padding: 2px 9px;
+  font-size: 12px; cursor: grab; user-select: none; white-space: nowrap;
+}
+.chip.dragging { opacity: .4; }
+.unused { background: transparent; border-style: dashed; }
+.problems { font-size: 12px; margin: 8px 0 0; }
+.problems .err { color: var(--critical); }
+.problems .warn { color: var(--ink-2); }
+.actions { display: flex; gap: 8px; margin-top: 12px; }
+.actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+details summary { cursor: pointer; color: var(--ink-2); font-size: 13px; margin-top: 12px; }
+.pop {
+  position: fixed; inset: auto; margin: 0; width: 320px; padding: 10px 12px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.22);
+}
+.pophead { display: flex; align-items: center; gap: 6px; font-weight: 650; font-size: 13px; margin-bottom: 8px; }
+.weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px 10px; margin-top: 8px; }
+.weights label { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.weights input { width: 58px; padding: 3px 5px; }
+.menu {
+  position: fixed; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 4px; display: none; min-width: 150px;
+}
+.menu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 5px 8px; border-radius: 5px; cursor: pointer; }
+.menu button:hover { background: var(--surface-2); }
+
+/* progress */
+.prog { margin: 8px 0 10px; }
+.prog .plabel { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--ink-2); margin-bottom: 4px; }
+.prog .plabel span:last-child { font-variant-numeric: tabular-nums; }
+.bar { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 4px; transition: width .2s; }
+.bar.thin { height: 5px; }
+.bar.ok > i { background: var(--good); }
+.bar.bad > i { background: var(--critical); }
+.state { font-size: 13px; }
+.state .ok { color: var(--good); font-weight: 600; }
+.state .bad { color: var(--critical); font-weight: 600; }
+pre.log { max-height: 160px; overflow: auto; font-size: 11px; background: var(--surface-2); border-radius: 6px; padding: 6px 8px; margin: 6px 0 0; white-space: pre; }
+
+/* runs */
+.tablewrap { overflow-x: auto; }
+table.runs { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.runs th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+table.runs td { padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.runs tr.sel td { background: var(--surface-2); }
+table.runs td.name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+table.runs input[type=radio] { margin: 0; }
+.badge { display: inline-block; padding: 0 7px; border-radius: 999px; font-size: 11px; border: 1px solid var(--border); color: var(--ink-2); }
+.badge.ok { color: var(--good); border-color: currentColor; }
+.badge.bad { color: var(--critical); border-color: currentColor; }
+.empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+/* heatmap */
+.viewhead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.viewhead .meta { color: var(--ink-2); font-size: 13px; }
+.finder { display: flex; gap: 6px; align-items: center; }
+.finder input { width: 110px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 10px 0 12px; }
+.legend button {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; background: none;
+  padding: 2px 7px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--ink-2);
+}
+.legend button:hover { background: var(--surface-2); }
+.legend button[aria-pressed=true] { border-color: var(--axis); background: var(--surface-2); color: var(--ink); }
+.legend .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.legend .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend button.clear { color: var(--accent); }
+.hm { position: relative; }
+.hm canvas { display: block; }
+.hm canvas.over { position: absolute; left: 0; top: 0; pointer-events: none; }
+.tip {
+  position: fixed; z-index: 20; pointer-events: none; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: 520px; display: none;
+}
+.tip .num { font-weight: 650; font-size: 13px; }
+.tip .sol { margin-top: 3px; word-break: break-all; }
+.tip .lbl { color: var(--muted); }
+
+/* trees */
+.trees { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.treebox h3 { margin: 0 0 4px; font-size: 13px; color: var(--ink-2); }
+.treebox .expr { font-size: 13px; word-break: break-all; margin-bottom: 6px; }
+.treebox .svgwrap { overflow: auto; max-height: 560px; border-top: 1px solid var(--grid); padding-top: 8px; }
+.treebox svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.alts { display: flex; gap: 4px; align-items: center; margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.alts button { border: 1px solid var(--axis); background: var(--surface); border-radius: 999px; min-width: 24px; height: 22px; padding: 0 7px; cursor: pointer; font-size: 12px; color: var(--ink-2); }
+.alts button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+
+/* colour-by + sweep + changed list */
+.viewtools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg.small button { padding: 3px 9px; font-size: 12px; }
+.sweep svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.sweep .bars rect { cursor: pointer; }
+.sweephead td { background: var(--surface-2); }
+.sweephead .tog { transition: transform .15s; }
+.sweephead.open .tog { transform: rotate(90deg); }
+tr.child td.name { padding-left: 26px; }
+details.changed { margin-top: 14px; }
+details.changed summary { margin: 0 0 6px; }
+table.chg { border-collapse: collapse; width: 100%; font-size: 12px; }
+table.chg th { text-align: left; color: var(--muted); font-weight: 600; padding: 3px 6px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+table.chg td { padding: 3px 6px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; vertical-align: top; }
+table.chg td.x { word-break: break-all; }
+table.chg tbody tr { cursor: pointer; }
+table.chg tbody tr:hover td { background: var(--surface-2); }
+.dh { color: var(--harder); font-weight: 650; }
+.de { color: var(--easier); font-weight: 650; }
+.fails { font-size: 12px; max-height: 180px; overflow: auto; margin-top: 6px; }
+.fails div { padding: 2px 0; border-bottom: 1px solid var(--grid); }
+</style>
+<script src="/vendor/math.js"></script>
+<script src="/verify-core.js"></script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+    <symbol id="i-auto" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17V11M13 17V7M18 17v-4"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  </defs>
+</svg>
+
+<header>
+  <h1>Traindle Explorer</h1>
+  <button class="ibtn" id="themeBtn" style="margin-left:auto" title="Theme: auto" aria-label="Theme"><svg class="ic"><use href="#i-auto"/></svg></button>
+</header>
+
+<div class="layout">
+  <div class="col">
+    <section class="card" aria-label="New run">
+      <input type="text" id="runName" placeholder="Run name" maxlength="60" aria-label="Run name" style="margin-bottom:10px">
+      <div class="row2">
+        <div class="field" title="Digits per puzzle (10^n puzzles)">Digits
+          <div class="seg" id="digitsSeg" role="group" aria-label="Digits per puzzle"></div>
+        </div>
+        <label class="field">Target
+          <input type="text" id="target" inputmode="decimal" value="10" aria-describedby="problems">
+        </label>
+      </div>
+
+      <div class="sechead">
+        <h3>Tiers <svg class="ic info" aria-hidden="true"><use href="#i-info"/></svg></h3>
+        <span class="tools">
+          <select id="presetSel" aria-label="Apply a tier preset" title="Presets replace the tiers only">
+            <option value="">Preset…</option>
+            <option value="default">Default</option>
+            <option value="injective" title="Only one-to-one functions: no !, combinations, permutations, sin/cos/tan/sec/csc/cot">Injective only</option>
+            <option value="noext" title="No function that hides a constant: no sqrt, cbrt, !, combinations, permutations, trig">No external numbers</option>
+          </select>
+          <button class="ibtn" id="addTier" title="Add tier" aria-label="Add tier"><svg class="ic"><use href="#i-plus"/></svg></button>
+          <button class="ibtn" id="resetCfg" title="Reset everything to the default game" aria-label="Reset to default"><svg class="ic"><use href="#i-reset"/></svg></button>
+        </span>
+      </div>
+      <div class="tiers" id="tiers"></div>
+      <div class="tier unused" id="unused" data-zone="unused" title="Features here are disabled">
+        <div class="thead"><span class="tnum" style="min-width:auto">Not used</span></div>
+        <div class="chips"></div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+        <div class="field" style="margin:0">Trig depth
+          <div class="seg" id="trigSeg" role="group" aria-label="Trig search depth"></div>
+        </div>
+        <label class="field" style="margin:0" title="Rarity window: also collect verified solutions costing at most best + this (one operation ≈ 10). Gives each puzzle a rarity count and up to 4 alternatives. 0 = off (slightly faster).">Rarity ±
+          <input type="number" id="altSlack" min="0" max="100" step="1" style="width:64px">
+        </label>
+        <button class="btn" id="weightsBtn" popovertarget="weightsPop" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px" title="Operator weights"><svg class="ic"><use href="#i-sliders"/></svg> Weights</button>
+      </div>
+      <div id="weightsPop" popover class="pop" aria-label="Operator weights">
+        <div class="pophead">Operator weights <svg class="ic info" aria-hidden="true"><use href="#i-info"/><title>Within a tier the cheapest solution wins (sum of weights, then shortest). A trig macro like sec(atan(x)) costs 2 × trig.</title></svg>
+          <button class="icon" popovertarget="weightsPop" popovertargetaction="hide" title="Close" aria-label="Close" style="margin-left:auto"><svg class="ic"><use href="#i-x"/></svg></button></div>
+        <div class="weights" id="weights"></div>
+      </div>
+      <div class="problems" id="problems" aria-live="polite"></div>
+      <div class="actions">
+        <button class="btn primary" id="runBtn"><svg class="ic"><use href="#i-play"/></svg> Run</button>
+        <button class="btn" id="cancelBtn" disabled title="Stop; partial results are kept"><svg class="ic"><use href="#i-stop"/></svg> Cancel</button>
+      </div>
+    </section>
+
+    <section class="card" aria-label="Progress">
+      <div class="state" id="runState">Idle</div>
+      <div class="prog">
+        <div class="plabel"><span>Generating</span><span id="genLabel">–</span></div>
+        <div class="bar" id="genBar"><i></i></div>
+      </div>
+      <div class="prog">
+        <div class="plabel"><span id="stageName">Round</span><span id="stageLabel">–</span></div>
+        <div class="bar thin" id="stageBar"><i></i></div>
+      </div>
+      <div class="prog" title="Checked in your browser with mathjs 15.2 (the game's evaluator)">
+        <div class="plabel"><span>Verifying</span><span id="verLabel">–</span></div>
+        <div class="bar" id="verBar"><i></i></div>
+      </div>
+      <div class="state" id="verState"></div>
+      <div class="fails" id="verFails"></div>
+      <details>
+        <summary>Log</summary>
+        <pre class="log" id="log"></pre>
+      </details>
+    </section>
+  </div>
+
+  <div class="col">
+    <section class="card" aria-label="Runs">
+      <div class="tablewrap"><table class="runs" id="runsTable"></table></div>
+    </section>
+
+    <section class="card" aria-labelledby="viewTitle">
+      <div class="viewhead">
+        <h2 id="viewTitle" style="margin:0">No run selected</h2>
+        <div class="viewtools">
+          <div class="seg small" id="colorSeg" role="group" aria-label="Colour cells by"></div>
+          <div class="seg small" id="sortSeg" role="group" aria-label="Order targets by" hidden></div>
+          <form class="finder" id="finder" role="search">
+            <input type="search" id="findNum" placeholder="Find puzzle" aria-label="Find puzzle">
+            <button class="ibtn" id="findBtn" title="Show this puzzle" aria-label="Show puzzle"><svg class="ic"><use href="#i-search"/></svg></button>
+          </form>
+        </div>
+      </div>
+      <div class="meta" id="viewMeta"></div>
+      <div class="legend" id="legend" role="group" aria-label="Legend: click entries to filter, several at once"></div>
+      <div class="hm" id="hm" tabindex="0" aria-label="Heatmap of puzzles; arrow keys move the selection">
+        <canvas id="hmBase"></canvas><canvas id="hmOver" class="over"></canvas>
+      </div>
+      <div class="sweep" id="sweep" hidden></div>
+      <details class="changed" id="changed" hidden>
+        <summary id="changedSum">Changed</summary>
+        <div class="tablewrap"><table class="chg" id="changedTable"></table></div>
+        <button class="link" id="changedMore" hidden>Show more</button>
+      </details>
+    </section>
+
+    <section class="card" aria-labelledby="treeH">
+      <div class="viewhead">
+        <h2 id="treeH" style="margin:0">Expression tree <svg class="ic info" aria-hidden="true"><use href="#i-info"/></svg></h2>
+        <button class="ibtn" id="niceBtn" style="width:auto;padding:0 8px;font-size:13px" title="Show values as fractions, multiples of π and roots (hover a box for the decimal)" aria-pressed="true">¾ π √</button>
+      </div>
+      <div id="trees" class="trees"><div class="empty">Click a cell.</div></div>
+    </section>
+  </div>
+</div>
+
+<div class="tip" id="tip"></div>
+<div class="menu" id="menu"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------- helpers
+const $ = (id) => document.getElementById(id);
+const fmtInt = (n) => Number(n).toLocaleString();
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const store = {
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  const text = await r.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  if (!r.ok) throw new Error((body && body.error) || r.statusText);
+  return body;
+}
+/** Simplest p/q (q <= maxDen) within a relative 1e-12 of x, via continued fractions. */
+function ratApprox(x, maxDen) {
+  if (!Number.isFinite(x)) return null;
+  const sign = x < 0 ? -1 : 1, ax = Math.abs(x);
+  let h0 = 0, h1 = 1, k0 = 1, k1 = 0, v = ax;
+  for (let i = 0; i < 40; i++) {
+    const a = Math.floor(v), h2 = a * h1 + h0, k2 = a * k1 + k0;
+    if (k2 > maxDen) break;
+    [h0, h1, k0, k1] = [h1, h2, k1, k2];
+    if (Math.abs(ax - h1 / k1) <= 1e-12 * Math.max(1, ax)) return [sign * h1, k1];
+    const f = v - a;
+    if (f < 1e-15) break;
+    v = 1 / f;
+  }
+  return null;
+}
+const gcd = (a, b) => (b ? gcd(b, a % b) : Math.abs(a));
+/** Tree display: integers, fractions, multiples of pi, square roots, else a decimal. */
+function niceVal(v) {
+  if (typeof v !== "number" || !Number.isFinite(v)) return fmtVal(v);
+  const neg = v < 0 ? "−" : "";
+  if (Number.isInteger(v)) return neg + Math.abs(v);
+  const r = ratApprox(v, 10000);
+  if (r) return neg + Math.abs(r[0]) + "/" + r[1];
+  const pi = ratApprox(v / Math.PI, 1000);
+  if (pi && pi[0] !== 0) {
+    const p = Math.abs(pi[0]);
+    return neg + (p === 1 ? "" : p) + "π" + (pi[1] === 1 ? "" : "/" + pi[1]);
+  }
+  const sq = ratApprox(v * v, 10000);
+  if (sq && sq[0] > 0) {
+    // sqrt(p/q) = sqrt(p*q)/q = a*sqrt(b)/q, then reduce a/q
+    let n = sq[0] * sq[1], a = 1;
+    for (let f = 2; f * f <= n; f++) while (n % (f * f) === 0) { n /= f * f; a *= f; }
+    const g = gcd(a, sq[1]), num = a / g, den = sq[1] / g;
+    if (n > 1 && n < 1e7) return neg + (num === 1 ? "" : num) + "√" + n + (den === 1 ? "" : "/" + den);
+  }
+  return fmtVal(v);
+}
+function fmtVal(v) {
+  if (typeof v !== "number" || !Number.isFinite(v)) return String(v);
+  if (Number.isInteger(v)) return String(v);
+  const s = v.toPrecision(6);
+  return s.includes("e") ? s : String(Number(s));
+}
+function fmtTime(s) {
+  if (s < 1) return (s * 1000).toFixed(0) + " ms";
+  if (s < 90) return s.toFixed(1) + " s";
+  return Math.floor(s / 60) + " min " + Math.round(s % 60) + " s";
+}
+
+// ---------------------------------------------------------------- colour
+// Blue ramp steps (reference palette). Tiers <= 7: ordinal ramp (validated: every
+// adjacent step visibly distinct, light end >= 2:1). More tiers: full sequential range
+// (difficulty as magnitude); exact tiers via the legend's isolate and the tooltip.
+const RAMP = {
+  light: { ord: ["#86b6ef","#6da7ec","#5598e7","#3987e5","#2a78d6","#256abf","#1c5cab","#184f95","#104281","#0d366b"],
+           seq: ["#cde2fb","#9ec5f4","#6da7ec","#3987e5","#256abf","#184f95","#0d366b"] },
+  dark:  { ord: ["#184f95","#1c5cab","#256abf","#2a78d6","#3987e5","#5598e7","#6da7ec","#86b6ef","#9ec5f4","#b7d3f6","#cde2fb"],
+           seq: ["#104281","#184f95","#256abf","#3987e5","#6da7ec","#9ec5f4","#cde2fb"] },
+};
+// Diverging compare scale: blue = easier in B, red = harder in B, gray = same.
+const DIVERGE = {
+  light: { easier: ["#86b6ef","#2a78d6","#104281"], harder: ["#ef908b","#d93b3b","#9b2222"], same: "#f0efec" },
+  dark:  { easier: ["#1c5cab","#3987e5","#86b6ef"], harder: ["#8f2a2a","#e66767","#f5aeaa"], same: "#383835" },
+};
+const UNSOLVED = "#d03b3b"; // status: critical, always with the "unsolved" label
+
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+const lin = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const delin = (c) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+function toLab(h) {
+  const [r, g, b] = hex2rgb(h).map(lin);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+}
+function toHex([L, a, b]) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+  return "#" + rgb.map((c) => Math.round(Math.min(1, Math.max(0, delin(c))) * 255).toString(16).padStart(2, "0")).join("");
+}
+function interp(stops, n) {
+  const labs = stops.map(toLab);
+  return Array.from({ length: n }, (_, i) => {
+    const t = n === 1 ? 0 : (i / (n - 1)) * (labs.length - 1);
+    const k = Math.min(labs.length - 2, Math.floor(t)), f = t - k;
+    return toHex(labs[k].map((v, j) => v + (labs[k + 1][j] - v) * f));
+  });
+}
+const mode = () => (document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+function tierColors(n) {
+  const r = RAMP[mode()];
+  return n <= 7 ? interp(r.ord, Math.max(n, 2)).slice(0, n) : interp(r.seq, n);
+}
+function inkOn(hex) {
+  const [r, g, b] = hex2rgb(hex).map(lin);
+  const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return L > 0.36 ? "#0b0b0b" : "#ffffff";
+}
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// ---------------------------------------------------------------- state
+const S = {
+  features: [], feat: {}, defaults: null,
+  cfg: null,          // editor config {name, digits, target, tiers:[{name, custom, features}], weights}
+  runs: [], A: null, B: null, sel: null, focus: new Set(),
+  poll: null, jobId: null, worker: null,
+  colorBy: "tier",    // heatmap colour: tier | cost | len | count
+  view: "run",        // run (heatmap) | sweep (target sweep chart)
+  sweepId: null, sweepSort: "target", openSweeps: new Set(),
+  alt: { A: 0, B: 0 }, // which solution each tree shows (0 = best)
+  changedLimit: 200,
+};
+const PRESET_NAMES = [
+  [["add", "sub", "mul", "div", "neg"], "+-*/"], [["add", "sub", "mul", "div"], "+-*/"],
+  [["brackets"], "brackets"], [["trig", "atrig", "rtrig", "artrig"], "trig"],
+  [["comb"], "combinations"], [["perm"], "permutations"],
+];
+function autoName(features) {
+  const key = [...features].sort().join(",");
+  for (const [fs, name] of PRESET_NAMES) if ([...fs].sort().join(",") === key) return name;
+  return features.map((f) => S.feat[f]?.label ?? f).join(" ");
+}
+const WEIGHT_LABELS = { add: "+", sub: "−", mul: "×", div: "÷", neg: "unary −", pow: "^", concat: "concat / digit", fact: "!", mod: "%", sqrt: "sqrt", cbrt: "cbrt", comb: "combinations", perm: "permutations", trig: "trig call" };
+
+// ---------------------------------------------------------------- editor
+function cfgFromServer(c) {
+  return {
+    name: c.name || "", digits: c.digits, target: c.target,
+    tiers: c.tiers.map((t) => ({ name: t.name, custom: false, features: [...t.features] })),
+    weights: { ...c.weights },
+    trig_rounds: c.trig_rounds ?? 2,
+    alt_slack: c.alt_slack ?? 10,
+  };
+}
+function usedFeatures() { return new Set(S.cfg.tiers.flatMap((t) => t.features)); }
+function saveCfg() { store.set("traindle.cfg", S.cfg); }
+
+function renderEditor() {
+  const c = S.cfg;
+  $("runName").value = c.name;
+  $("target").value = c.target;
+  const seg = $("digitsSeg");
+  seg.innerHTML = "";
+  for (let d = 1; d <= (S.defaults?.max_digits ?? 5); d++) {
+    const b = document.createElement("button");
+    b.textContent = d;
+    b.setAttribute("aria-pressed", String(c.digits === d));
+    b.title = `${d} digit${d > 1 ? "s" : ""}: ${fmtInt(10 ** d)} puzzles`;
+    b.onclick = () => { c.digits = d; saveCfg(); renderEditor(); };
+    seg.appendChild(b);
+  }
+  const tseg = $("trigSeg");
+  tseg.innerHTML = "";
+  const TRIG_HINT = { 1: "1 trig round: fastest", 2: "2 trig rounds (default)", 3: "3 trig rounds: adds a slow last resort that can take minutes" };
+  for (let d = 1; d <= 3; d++) {
+    const b = document.createElement("button");
+    b.textContent = d;
+    b.setAttribute("aria-pressed", String((c.trig_rounds ?? 2) === d));
+    b.title = TRIG_HINT[d];
+    b.onclick = () => { c.trig_rounds = d; saveCfg(); renderEditor(); };
+    tseg.appendChild(b);
+  }
+  $("altSlack").value = c.alt_slack ?? 10;
+  const wrap = $("tiers");
+  wrap.innerHTML = "";
+  c.tiers.forEach((t, i) => {
+    const row = document.createElement("div");
+    row.className = "tier";
+    row.dataset.zone = String(i);
+    const name = t.custom ? t.name : autoName(t.features);
+    row.innerHTML = `<div class="thead"><span class="tnum">T${i + 1}</span>
+      <input class="tname" value="${esc(name)}" aria-label="Tier ${i + 1} name">
+      <button class="icon" data-act="up" title="Move up" aria-label="Move up" ${i === 0 ? "disabled" : ""}><svg class="ic"><use href="#i-up"/></svg></button>
+      <button class="icon" data-act="down" title="Move down" aria-label="Move down" ${i === c.tiers.length - 1 ? "disabled" : ""}><svg class="ic"><use href="#i-down"/></svg></button>
+      <button class="icon" data-act="del" title="Remove tier (its features go to Not used)" aria-label="Remove tier"><svg class="ic"><use href="#i-x"/></svg></button></div>
+      <div class="chips"></div>`;
+    const input = row.querySelector("input");
+    input.oninput = () => { t.name = input.value; t.custom = input.value.trim() !== "" && input.value !== autoName(t.features); saveCfg(); };
+    row.querySelector('[data-act=up]').onclick = () => { [c.tiers[i - 1], c.tiers[i]] = [c.tiers[i], c.tiers[i - 1]]; saveCfg(); renderEditor(); };
+    row.querySelector('[data-act=down]').onclick = () => { [c.tiers[i + 1], c.tiers[i]] = [c.tiers[i], c.tiers[i + 1]]; saveCfg(); renderEditor(); };
+    row.querySelector('[data-act=del]').onclick = () => { c.tiers.splice(i, 1); saveCfg(); renderEditor(); };
+    fillChips(row.querySelector(".chips"), t.features);
+    wireDrop(row);
+    wrap.appendChild(row);
+  });
+  const used = usedFeatures();
+  fillChips($("unused").querySelector(".chips"), S.features.map((f) => f.id).filter((id) => !used.has(id)));
+  wireDrop($("unused"));
+  const wEl = $("weights");
+  wEl.innerHTML = "";
+  const order = ["add", "sub", "mul", "div", "neg", "pow", "concat", "fact", "mod", "sqrt", "cbrt", "comb", "perm", "trig"];
+  const keys = [...order.filter((k) => k in c.weights), ...Object.keys(c.weights).filter((k) => !order.includes(k))];
+  for (const k of keys) {
+    const v = c.weights[k];
+    const l = document.createElement("label");
+    l.innerHTML = `<span>${esc(WEIGHT_LABELS[k] ?? k)}</span><input type="number" min="${k === "concat" ? 0 : 1}" max="1000" value="${v}">`;
+    l.querySelector("input").oninput = (e) => { c.weights[k] = Math.max(0, Math.round(Number(e.target.value) || 0)); saveCfg(); validate(); };
+    wEl.appendChild(l);
+  }
+  validate();
+}
+
+function fillChips(el, ids) {
+  el.innerHTML = "";
+  for (const id of ids) {
+    const f = S.feat[id];
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = f ? f.label : id;
+    chip.draggable = true;
+    chip.tabIndex = 0;
+    chip.title = f?.needs_brackets ? "written with parentheses: needs brackets in the same or an earlier tier" : "";
+    chip.ondragstart = (e) => { e.dataTransfer.setData("text/plain", id); chip.classList.add("dragging"); };
+    chip.ondragend = () => chip.classList.remove("dragging");
+    chip.onclick = (e) => openMoveMenu(id, e.currentTarget);
+    chip.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMoveMenu(id, chip); } };
+    el.appendChild(chip);
+  }
+}
+function moveFeature(id, zone) {
+  for (const t of S.cfg.tiers) t.features = t.features.filter((f) => f !== id);
+  if (zone === "new") S.cfg.tiers.push({ name: "", custom: false, features: [id] });
+  else if (zone !== "unused") S.cfg.tiers[Number(zone)].features.push(id);
+  S.cfg.tiers = S.cfg.tiers.filter((t, i) => t.features.length || String(i) === String(zone));
+  saveCfg();
+  renderEditor();
+}
+function wireDrop(el) {
+  el.ondragover = (e) => { e.preventDefault(); el.classList.add("drop"); };
+  el.ondragleave = () => el.classList.remove("drop");
+  el.ondrop = (e) => { e.preventDefault(); el.classList.remove("drop"); const id = e.dataTransfer.getData("text/plain"); if (id) moveFeature(id, el.dataset.zone); };
+}
+function openMoveMenu(id, anchor) {
+  const m = $("menu");
+  const opts = S.cfg.tiers.map((t, i) => [String(i), `Tier ${i + 1}: ${t.custom ? t.name : autoName(t.features)}`]);
+  opts.push(["new", "New tier at the end"], ["unused", "Not used"]);
+  m.innerHTML = `<div class="hint" style="padding:4px 8px;margin:0">Move “${esc(S.feat[id]?.label ?? id)}” to</div>` +
+    opts.map(([z, l]) => `<button data-z="${z}">${esc(l)}</button>`).join("");
+  m.querySelectorAll("button").forEach((b) => (b.onclick = () => { hideMenu(); moveFeature(id, b.dataset.z); }));
+  const r = anchor.getBoundingClientRect();
+  m.style.display = "block";
+  m.style.left = Math.min(r.left, innerWidth - m.offsetWidth - 8) + "px";
+  m.style.top = Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8) + "px";
+  m.querySelector("button")?.focus();
+}
+function hideMenu() { $("menu").style.display = "none"; }
+document.addEventListener("click", (e) => { if (!e.target.closest(".menu") && !e.target.closest(".chip")) hideMenu(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") hideMenu(); });
+
+/** Mirrors SolverConfig::normalize; the server re-checks. */
+function validate() {
+  const c = S.cfg, errs = [], warns = [];
+  const tg = parseTargets(c.target);
+  if (tg.error) errs.push(tg.error);
+  const slack = Number(c.alt_slack ?? 10);
+  if (!Number.isInteger(slack) || slack < 0 || slack > 100) errs.push("Rarity window must be a whole number from 0 to 100.");
+  const tiers = c.tiers.filter((x) => x.features.length);
+  if (!tiers.length) errs.push("Put at least one feature in a tier.");
+  const bAt = tiers.findIndex((x) => x.features.includes("brackets"));
+  tiers.forEach((x, i) => x.features.forEach((f) => {
+    if (S.feat[f]?.needs_brackets && (bAt < 0 || bAt > i))
+      errs.push(`“${S.feat[f].label}” is written with parentheses, so brackets must be in tier ${i + 1} or earlier.`);
+  }));
+  for (const [k, v] of Object.entries(c.weights)) {
+    if (v > 1000) errs.push(`Weight ${WEIGHT_LABELS[k] ?? k} is above 1000.`);
+    if (v === 0 && k !== "concat") errs.push(`Weight ${WEIGHT_LABELS[k] ?? k} must be at least 1.`);
+  }
+  const used = usedFeatures();
+  if (c.digits > 1 && !["add", "sub", "mul", "div", "pow", "mod", "comb", "perm", "concat"].some((f) => used.has(f)))
+    warns.push("No binary operator or concat is enabled, so no puzzle with 2+ digits can be solved.");
+  if (c.digits === 5) warns.push("5 digits = 100,000 puzzles; deep tiers can take a minute or more.");
+  const n = tg.targets?.length ?? 1, sweep = n > 1;
+  $("runBtn").innerHTML = `<svg class="ic"><use href="#i-${sweep ? "chart" : "play"}"/></svg> ${sweep ? `Sweep ×${n}` : "Run"}`;
+  const last = S.runs.find((r) => r.digits === c.digits && !r.cancelled);
+  $("runBtn").title = sweep ? `One run per target${last ? `, roughly ${fmtTime(last.elapsed_s * n)} in total` : ""}` : "";
+  $("problems").innerHTML = errs.map((e) => `<div class="err">${esc(e)}</div>`).join("") + warns.map((w) => `<div class="warn">${esc(w)}</div>`).join("");
+  $("runBtn").disabled = errs.length > 0 || S.poll !== null;
+  return errs.length === 0;
+}
+
+$("runName").oninput = (e) => { S.cfg.name = e.target.value; saveCfg(); };
+// weights popup: anchor it under its button when it opens
+$("weightsPop").addEventListener("beforetoggle", (e) => {
+  if (e.newState !== "open") return;
+  const r = $("weightsBtn").getBoundingClientRect(), pop = $("weightsPop"), w = 320;
+  pop.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + "px";
+  pop.style.top = Math.min(r.bottom + 6, innerHeight - 260) + "px";
+});
+document.querySelectorAll("h3 .info")[0].innerHTML += "<title>Tiers are tried in order; a puzzle's tier is the highest one its solution needs. Drag features between tiers or click one to move it.</title>";
+document.querySelector("#treeH .info").innerHTML += "<title>Values flow up the arrows to the result. Each arrow is labelled with its operation, coloured by its tier. Operands keep their left-to-right order.</title>";
+$("target").oninput = (e) => { S.cfg.target = e.target.value; saveCfg(); validate(); };
+$("target").title = "A number, or several for a sweep: 1..20, 0..1..0.25 (start..end..step), or 10, 24, 100";
+$("altSlack").oninput = (e) => { S.cfg.alt_slack = e.target.value === "" ? NaN : Number(e.target.value); saveCfg(); validate(); };
+
+/** Target field: one number, or a comma list of numbers and a..b[..step] ranges. */
+function parseTargets(text) {
+  const NUM = /^-?(\d+\.?\d*|\.\d+)$/, out = [];
+  const dec = (x) => (x.split(".")[1] ?? "").length;
+  for (const raw of text.split(",")) {
+    const part = raw.trim();
+    if (!part) continue;
+    const r = part.split("..").map((x) => x.trim());
+    if (r.length === 1) {
+      if (!NUM.test(part)) return { error: `“${part}” is not a plain number like 10, -3 or 0.5.` };
+      out.push(part);
+    } else if (r.length <= 3 && r.every((x) => NUM.test(x))) {
+      const [a, b] = r.map(Number), step = r[2] ? Number(r[2]) : 1, d = Math.max(dec(r[0]), dec(r[2] ?? "1"));
+      if (step <= 0) return { error: "A range step must be positive." };
+      if (b < a) return { error: `Range ${part} runs backwards.` };
+      const k = Math.floor((b - a) / step + 1e-9) + 1;
+      if (out.length + k > 200) return { error: "A sweep can have at most 200 targets." };
+      for (let i = 0; i < k; i++) out.push(String(Number((a + i * step).toFixed(d))));
+    } else return { error: `“${part}” is not a number or a range like 1..20 or 0..1..0.25.` };
+  }
+  if (!out.length) return { error: "Enter a target." };
+  if (out.length > 200) return { error: "A sweep can have at most 200 targets." };
+  if (out.some((t) => Math.abs(Number(t)) > 1e6)) return { error: "Targets must be within ±1,000,000." };
+  return { targets: [...new Set(out)] };
+}
+$("addTier").onclick = () => { S.cfg.tiers.push({ name: "", custom: false, features: [] }); saveCfg(); renderEditor(); };
+$("resetCfg").onclick = () => { S.cfg = cfgFromServer(S.defaults.config); saveCfg(); renderEditor(); };
+
+// Presets replace the tiers only (digits, target, weights and trig depth stay).
+const PRESETS = {
+  default: { name: "", tiers: null },
+  // Only one-to-one functions: drops ! (0! = 1! = 1), combinations / permutations
+  // (C(5,2) = C(5,3)), and the periodic sin cos tan / sec csc cot. Keeps unary minus,
+  // sqrt, cbrt and the inverse trig functions. Binary arithmetic stays.
+  injective: {
+    name: "injective only",
+    tiers: [["add", "sub", "mul", "div", "neg"], ["brackets"], ["pow"], ["concat"], ["mod"], ["sqrt"], ["cbrt"], ["atrig", "artrig"]],
+  },
+  // Every function call hides a constant (sqrt = ^(1/2), cbrt = ^(1/3), n! = 1*2*...*n,
+  // combinations/permutations are factorials, trig brings pi), so only operators remain.
+  noext: {
+    name: "no external numbers",
+    tiers: [["add", "sub", "mul", "div", "neg"], ["brackets"], ["pow"], ["concat"], ["mod"]],
+  },
+};
+$("presetSel").onchange = (e) => {
+  const p = PRESETS[e.target.value];
+  e.target.value = "";
+  if (!p) return;
+  const tiers = p.tiers ?? cfgFromServer(S.defaults.config).tiers.map((t) => t.features);
+  S.cfg.tiers = tiers.map((f) => ({ name: "", custom: false, features: [...f] }));
+  if (p.name && !S.cfg.name.trim()) S.cfg.name = p.name;
+  saveCfg();
+  renderEditor();
+};
+
+// ---------------------------------------------------------------- run + progress
+function setBar(id, frac, cls) {
+  const el = $(id);
+  el.className = "bar" + (id === "stageBar" ? " thin" : "") + (cls ? " " + cls : "");
+  el.firstElementChild.style.width = Math.max(0, Math.min(1, frac)) * 100 + "%";
+}
+$("runBtn").onclick = async () => {
+  if (!validate()) return;
+  const c = S.cfg;
+  const body = {
+    name: c.name.trim(), digits: c.digits, target: c.target.trim(), weights: c.weights, trig_rounds: c.trig_rounds ?? 2,
+    alt_slack: c.alt_slack ?? 10,
+    tiers: c.tiers.filter((t) => t.features.length).map((t) => ({ name: t.custom ? t.name.trim() : autoName(t.features), features: t.features })),
+  };
+  const targets = parseTargets(c.target).targets;
+  const sweep = targets.length > 1;
+  body.target = targets[0];
+  try {
+    const r = sweep
+      ? await api("/api/sweep", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config: body, targets }) })
+      : await api("/api/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    S.jobId = r.id; S.lastRunId = null;
+    $("verLabel").textContent = "–"; setBar("verBar", 0); $("verState").textContent = ""; $("verFails").innerHTML = "";
+    startPolling();
+  } catch (e) {
+    $("runState").innerHTML = `<span class="bad">Could not start:</span> ${esc(e.message)}`;
+  }
+};
+$("cancelBtn").onclick = () => api("/api/cancel", { method: "POST" }).catch(() => {});
+
+function startPolling() {
+  if (S.poll) return;
+  $("runBtn").disabled = true;
+  $("cancelBtn").disabled = false;
+  S.poll = setInterval(pollStatus, 250);
+  pollStatus();
+}
+async function pollStatus() {
+  let st;
+  try { st = await api("/api/status"); } catch { return; }
+  if (st.state === "idle") { stopPolling(); return; }
+  const p = st.progress;
+  setBar("genBar", p.total ? p.solved / p.total : 0);
+  $("genLabel").textContent = `${fmtInt(p.solved)} / ${fmtInt(p.total)} solved`;
+  setBar("stageBar", p.of ? p.done / p.of : 0);
+  $("stageName").textContent = p.round_count ? `Round ${p.round_idx}/${p.round_count} · ${p.round}` : "Current round";
+  $("stageLabel").textContent = p.of ? `${p.stage} ${fmtInt(p.done)} / ${fmtInt(p.of)}` : p.stage;
+  $("log").textContent = p.log.join("\n");
+  const name = st.name ? `“${esc(st.name)}”` : st.sweep ? "sweep" : "run";
+  // a sweep saves one run per target: list each as soon as it lands
+  if (st.sweep && S.lastRunId !== st.run_id) { S.lastRunId = st.run_id; loadRuns(); }
+  if (st.state === "running") {
+    $("runState").innerHTML = st.sweep
+      ? `Sweep ${name} · target ${st.sweep.i + 1} / ${st.sweep.n} (→ ${esc(st.sweep.target)}) · ${fmtTime(st.elapsed_s)}`
+      : `Running ${name} · ${fmtTime(st.elapsed_s)}`;
+    return;
+  }
+  stopPolling();
+  if (st.state === "error") { $("runState").innerHTML = `<span class="bad">Failed:</span> ${esc(st.error)}`; return; }
+  const left = p.total - p.solved;
+  $("runState").innerHTML = st.state === "cancelled"
+    ? `<span class="bad">Cancelled</span> after ${fmtTime(st.elapsed_s)}; partial results saved.`
+    : st.sweep
+      ? `Finished sweep ${name}: ${st.sweep.n} targets in ${fmtTime(st.elapsed_s)}.`
+      : `Finished ${name} in ${fmtTime(st.elapsed_s)}: ${fmtInt(p.solved)} solved` + (left ? `, ${fmtInt(left)} unsolved.` : ".");
+  if (S.jobId === st.id) {
+    S.jobId = null;
+    await loadRuns();
+    if (st.sweep) {
+      S.openSweeps.add(st.sweep.id);
+      showSweep(st.sweep.id);
+      // verify every run of the sweep, one after another
+      const ids = sweepRuns(st.sweep.id).filter((r) => !r.verify).map((r) => r.id);
+      for (const id of ids) { if (S.poll) break; await verifyRun(await loadRun(id), true); }
+    } else {
+      await selectRun("A", st.run_id ?? st.id);
+      verifyRun(S.A);
+    }
+  }
+}
+function stopPolling() {
+  clearInterval(S.poll); S.poll = null;
+  $("cancelBtn").disabled = true;
+  validate();
+}
+
+// ---------------------------------------------------------------- verification
+function verifyRun(run, quiet) {
+  return new Promise((resolve) => verifyRunCb(run, quiet, resolve));
+}
+function verifyRunCb(run, quiet, resolve) {
+  if (!run || !window.TraindleVerify) return resolve();
+  if (S.worker) { S.worker.terminate(); S.workerDone?.(); }
+  S.workerDone = resolve;
+  const tag = run.summary.sweep ? `→ ${run.summary.target}: ` : "";
+  const cfg = run.summary.config;
+  const w = new Worker("/verify-worker.js");
+  S.worker = w;
+  setBar("verBar", 0);
+  $("verLabel").textContent = `0 / ${fmtInt(run.solutions.length)}`;
+  $("verState").textContent = "";
+  $("verFails").innerHTML = "";
+  w.onmessage = async (e) => {
+    const m = e.data;
+    if (m.type === "progress") {
+      setBar("verBar", m.done / m.total);
+      $("verLabel").textContent = `${tag}${fmtInt(m.done)} / ${fmtInt(m.total)}`;
+    } else if (m.type === "done") {
+      w.terminate(); S.worker = null;
+      const r = m.report;
+      setBar("verBar", 1, r.ok ? "ok" : "bad");
+      $("verState").innerHTML = r.ok
+        ? `<span class="ok" title="All solutions${r.alts_checked ? ` and ${fmtInt(r.alts_checked)} alternatives` : ""} pass the game's rules and equal ${esc(cfg.target)} exactly (mathjs ${esc(r.mathjs_version)}, ${fmtTime(r.elapsed_ms / 1000)})">✓ ${esc(tag)}${fmtInt(r.checked)} valid</span>`
+        : `<span class="bad">✗ ${esc(tag)}${fmtInt(r.failure_count)} failed.</span>`;
+      $("verFails").innerHTML = r.failures.slice(0, 50).map((f) => `<div><b class="mono">${esc(f.number)}</b>${f.alt ? ' <span class="hint">alt</span>' : ""} <span class="mono">${esc(f.solution)}</span><br>${esc(f.errors.join("; "))}</div>`).join("");
+      try { await api(`/api/runs/${run.summary.id}/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) }); } catch {}
+      run.verify = r;
+      await loadRuns();
+      if (!quiet || S.view === "sweep") renderView();
+      resolve();
+    } else {
+      w.terminate(); S.worker = null;
+      $("verState").innerHTML = `<span class="bad">Verification error:</span> ${esc(m.message)}`;
+      resolve();
+    }
+  };
+  w.onerror = (e) => { $("verState").innerHTML = `<span class="bad">Could not start the verifier</span> (${esc(e.message || "mathjs failed to load")}).`; resolve(); };
+  w.postMessage({ run: { digits: cfg.digits, target: cfg.target, tiers: cfg.tiers }, solutions: run.solutions });
+}
+
+// ---------------------------------------------------------------- runs list
+async function loadRuns() {
+  try { S.runs = await api("/api/runs"); } catch { S.runs = []; }
+  renderRuns();
+}
+const sweepRuns = (id) => S.runs.filter((r) => r.sweep?.id === id).sort((x, y) => x.sweep.index - y.sweep.index);
+function renderRuns() {
+  const t = $("runsTable");
+  if (!S.runs.length) { t.innerHTML = `<tr><td class="empty">No runs yet.</td></tr>`; return; }
+  const a = S.A?.summary.id, b = S.B?.summary.id;
+  const vBadge = (r) => r.verify == null ? `<span class="badge">–</span>`
+    : r.verify.ok ? `<span class="badge ok">✓ ${fmtInt(r.verify.checked)}</span>` : `<span class="badge bad">✗ ${fmtInt(r.verify.failures)}</span>`;
+  const when = (r) => r.created ? new Date(r.created).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : "";
+  const runRow = (r, child) => `<tr class="${r.id === a ? "sel" : ""}${child ? " child" : ""}" data-id="${esc(r.id)}">
+        <td><input type="radio" name="runA" aria-label="View ${esc(r.name || r.id)}" ${r.id === a ? "checked" : ""}></td>
+        <td><input type="radio" name="runB" aria-label="Compare with ${esc(r.name || r.id)}" ${r.id === b ? "checked" : ""}></td>
+        <td class="name" title="${esc(r.id)}">${child ? `→ ${esc(r.target)}` : `${esc(r.name || "(unnamed)")} <span class="hint" style="margin:0">${esc(when(r))}</span>`}</td>
+        <td>${r.digits}</td><td>${esc(r.target)}</td>
+        <td>${fmtInt(r.solved)} / ${fmtInt(r.total)}${r.cancelled ? ' <span class="badge bad">cancelled</span>' : ""}</td>
+        <td>${(r.tier_names || []).length}</td><td>${fmtTime(r.elapsed_s || 0)}</td><td>${vBadge(r)}</td>
+        <td><a class="icon" href="/api/runs/${esc(r.id)}/solutions.json" download="${esc(r.id)}-solutions.json" title="Download solutions.json" aria-label="Download"><svg class="ic"><use href="#i-download"/></svg></a>
+            <button class="icon" data-act="verify" title="Verify again" aria-label="Verify"><svg class="ic"><use href="#i-check"/></svg></button>
+            <button class="icon" data-act="del" title="Delete run" aria-label="Delete"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>`;
+  const sweepRow = (id, rs) => {
+    const sw = rs[0].sweep, open = S.openSweeps.has(id), solved = rs.reduce((x, r) => x + r.solved, 0), total = rs.reduce((x, r) => x + r.total, 0);
+    const time = rs.reduce((x, r) => x + (r.elapsed_s || 0), 0), ok = rs.filter((r) => r.verify?.ok).length, bad = rs.filter((r) => r.verify && !r.verify.ok).length;
+    const v = bad ? `<span class="badge bad">✗ ${bad}</span>` : `<span class="badge${ok === rs.length ? " ok" : ""}">✓ ${ok}/${rs.length}</span>`;
+    return `<tr class="sweephead${open ? " open" : ""}${S.view === "sweep" && S.sweepId === id ? " sel" : ""}" data-sweep="${esc(id)}">
+        <td colspan="2"><button class="icon" data-act="tog" title="${open ? "Hide" : "Show"} its runs" aria-expanded="${open}"><svg class="ic tog"><use href="#i-right"/></svg></button></td>
+        <td class="name" title="${esc(id)}"><button class="icon" data-act="chart" title="Show the sweep chart" aria-label="Show sweep chart"><svg class="ic"><use href="#i-chart"/></svg></button> ${esc(sw.name || "(unnamed sweep)")} <span class="hint" style="margin:0">${esc(when(rs[0]))}</span></td>
+        <td>${rs[0].digits}</td><td title="${esc(rs.map((r) => r.target).join(", "))}">${esc(rs[0].target)} … ${esc(rs[rs.length - 1].target)} <span class="hint" style="margin:0">×${rs.length}${rs.length < sw.count ? ` of ${sw.count}` : ""}</span></td>
+        <td>${fmtInt(solved)} / ${fmtInt(total)}</td><td>${(rs[0].tier_names || []).length}</td><td>${fmtTime(time)}</td><td>${v}</td>
+        <td><button class="icon" data-act="delsweep" title="Delete every run of this sweep" aria-label="Delete sweep"><svg class="ic"><use href="#i-trash"/></svg></button></td></tr>`;
+  };
+  let body = "";
+  const done = new Set();
+  for (const r of S.runs) {
+    const sid = r.sweep?.id;
+    if (!sid) { body += runRow(r, false); continue; }
+    if (done.has(sid)) continue;
+    done.add(sid);
+    const rs = sweepRuns(sid);
+    body += sweepRow(sid, rs);
+    if (S.openSweeps.has(sid)) body += rs.map((x) => runRow(x, true)).join("");
+  }
+  t.innerHTML = `<thead><tr><th title="View this run">A</th><th title="Compare A with this run">B${b ? ` <button class="icon" id="clearB" title="Stop comparing" aria-label="Stop comparing"><svg class="ic"><use href="#i-x"/></svg></button>` : ""}</th><th>Run</th><th>Digits</th><th>Target</th><th>Solved</th><th>Tiers</th><th>Time</th><th title="Checked with mathjs">Verified</th><th></th></tr></thead><tbody>${body}</tbody>`;
+  t.querySelectorAll("tbody tr[data-id]").forEach((tr) => {
+    const id = tr.dataset.id;
+    tr.querySelector('input[name=runA]').onchange = () => selectRun("A", id);
+    tr.querySelector('input[name=runB]').onchange = () => selectRun("B", id);
+    tr.querySelector("td.name").onclick = () => selectRun("A", id);
+    tr.querySelector('[data-act=verify]').onclick = async () => { const run = await loadRun(id); verifyRun(run); };
+    tr.querySelector('[data-act=del]').onclick = async () => {
+      if (!confirm(`Delete run “${id}”? This removes its files.`)) return;
+      try { await api(`/api/runs/${id}`, { method: "DELETE" }); } catch (e) { alert(e.message); }
+      if (S.A?.summary.id === id) S.A = null;
+      if (S.B?.summary.id === id) S.B = null;
+      await loadRuns(); renderView();
+    };
+  });
+  t.querySelectorAll("tbody tr[data-sweep]").forEach((tr) => {
+    const id = tr.dataset.sweep;
+    tr.querySelector("[data-act=tog]").onclick = () => { S.openSweeps.has(id) ? S.openSweeps.delete(id) : S.openSweeps.add(id); renderRuns(); };
+    tr.querySelector("td.name").onclick = () => showSweep(id);
+    tr.querySelector("[data-act=delsweep]").onclick = async (e) => {
+      e.stopPropagation();
+      const rs = sweepRuns(id);
+      if (!confirm(`Delete all ${rs.length} runs of this sweep? This removes their files.`)) return;
+      for (const r of rs) {
+        try { await api(`/api/runs/${r.id}`, { method: "DELETE" }); } catch (err) { alert(err.message); break; }
+        if (S.A?.summary.id === r.id) S.A = null;
+        if (S.B?.summary.id === r.id) S.B = null;
+      }
+      if (S.sweepId === id) { S.view = "run"; S.sweepId = null; }
+      await loadRuns(); renderView();
+    };
+  });
+  const cb = $("clearB");
+  if (cb) cb.onclick = () => { S.B = null; renderRuns(); renderView(); };
+}
+const runCache = new Map();
+async function loadRun(id) {
+  if (runCache.has(id)) return runCache.get(id);
+  const [summary, solutions] = await Promise.all([api(`/api/runs/${id}/summary.json`), api(`/api/runs/${id}/solutions.json`)]);
+  let verify = null;
+  if (S.runs.find((r) => r.id === id)?.verify) {
+    try { verify = await api(`/api/runs/${id}/verify.json`); } catch {}
+  }
+  const d = summary.digits, n = 10 ** d;
+  const tiers = new Uint8Array(n);       // 0 = unsolved
+  const sol = new Array(n), alts = new Array(n);
+  const cost = new Uint16Array(n), count = new Uint16Array(n);   // 0 = not recorded (older runs)
+  for (const s of solutions) {
+    const i = Number(s.number);
+    tiers[i] = s.tier; sol[i] = s.solution;
+    if (s.cost != null) cost[i] = Math.min(65535, s.cost);
+    if (s.count != null) count[i] = s.count;
+    if (s.alts) alts[i] = s.alts;
+  }
+  const slack = summary.config?.alt_slack;
+  const run = { summary, solutions, verify, tiers, sol, alts, cost, count, n, T: summary.tier_names.length,
+    hasCost: solutions.length > 0 && solutions[0].cost != null, hasRarity: solutions.length > 0 && solutions[0].count != null && slack > 0, slack };
+  runCache.set(id, run);
+  return run;
+}
+async function selectRun(slot, id) {
+  const run = await loadRun(id);
+  S.view = "run";
+  if (slot === "A") { S.A = run; if (S.B && S.B.summary.id === id) S.B = null; }
+  else { if (S.A && S.A.summary.id === id) return; S.B = run; }
+  S.alt = { A: 0, B: 0 }; S.changedLimit = 200;
+  if (S.sel !== null && S.sel >= (S.A?.n ?? 0)) S.sel = null;
+  S.focus = new Set();
+  renderRuns();
+  renderView();
+  // runs saved without a verification report get checked as soon as they are opened
+  if (slot === "A" && !run.verify && !S.worker && S.jobId === null && S.poll === null) verifyRun(run);
+}
+
+// ---------------------------------------------------------------- heatmap
+const HM = { geom: null };
+function comparing() { return S.A && S.B && S.A.summary.digits === S.B.summary.digits; }
+function geometry(digits, width) {
+  const labelW = digits >= 3 ? 34 : 26, top = 18;
+  if (digits <= 4) {
+    const rows = 10 ** Math.floor(digits / 2), cols = 10 ** Math.ceil(digits / 2);
+    const cell = Math.max(2, Math.min(44, Math.floor((width - labelW) / cols)));
+    return { digits, panels: [{ x: labelW, y: top, prefix: "" }], rows, cols, cell, perPanel: rows * cols,
+      rowDigits: Math.floor(digits / 2), colDigits: Math.ceil(digits / 2), labelW, top,
+      width: labelW + cols * cell, height: top + rows * cell + 4 };
+  }
+  // 5 digits: ten 100x100 panels, one per leading digit
+  const perRow = width >= 1100 ? 5 : width >= 660 ? 3 : 2, gap = 14, rows = 100, cols = 100;
+  const cell = Math.max(1, Math.floor((width - labelW - gap * (perRow - 1)) / (perRow * cols)));
+  const pw = cols * cell, ph = rows * cell, panels = [];
+  for (let p = 0; p < 10; p++) {
+    const r = Math.floor(p / perRow), c = p % perRow;
+    panels.push({ x: labelW + c * (pw + gap), y: top + r * (ph + top + 6), prefix: String(p) });
+  }
+  const nr = Math.ceil(10 / perRow);
+  return { digits, panels, rows, cols, cell, perPanel: 10000, rowDigits: 2, colDigits: 2, labelW, top,
+    width: labelW + perRow * pw + (perRow - 1) * gap, height: nr * (ph + top + 6) };
+}
+function cellRect(g, i) {
+  const p = g.panels[Math.floor(i / g.perPanel)], k = i % g.perPanel;
+  return [p.x + (k % g.cols) * g.cell, p.y + Math.floor(k / g.cols) * g.cell];
+}
+function cellAt(g, x, y) {
+  for (let pi = 0; pi < g.panels.length; pi++) {
+    const p = g.panels[pi];
+    const c = Math.floor((x - p.x) / g.cell), r = Math.floor((y - p.y) / g.cell);
+    if (c >= 0 && c < g.cols && r >= 0 && r < g.rows) return pi * g.perPanel + r * g.cols + c;
+  }
+  return null;
+}
+// ---- colour by a per-puzzle metric (cost, length, rarity): quantile bins on one blue ramp
+const METRICS = {
+  tier: { label: "Tier", tip: "Colour by tier" },
+  cost: { label: "Cost", tip: "Colour by the solution's cost (sum of operator weights)", need: "hasCost" },
+  len: { label: "Length", tip: "Colour by the solution's length in characters" },
+  count: { label: "Rarity", tip: "Colour by how few solutions exist near the best one (darker = rarer). Counts distinct value paths the solver found within the rarity window, so it is a relative index, not an exact count.", need: "hasRarity" },
+};
+const colorMode = () => (comparing() || !S.A || (METRICS[S.colorBy].need && !S.A[METRICS[S.colorBy].need]) ? "tier" : S.colorBy);
+function metricValue(run, i, m) {
+  if (!run.tiers[i]) return null;
+  return m === "cost" ? run.cost[i] : m === "len" ? run.sol[i].length : run.count[i];
+}
+let metricMemo = null;
+/** Bins for the current run + metric: {bins: [{lo, hi, color}] light→dark, idx: Int8Array (-1 unsolved)}. */
+function metricInfo() {
+  const A = S.A, m = colorMode(), key = A.summary.id + m + mode();
+  if (metricMemo?.key === key) return metricMemo;
+  const vals = [];
+  for (let i = 0; i < A.n; i++) { const v = metricValue(A, i, m); if (v != null) vals.push(v); }
+  vals.sort((x, y) => x - y);
+  // up to 7 quantile bins with distinct edges
+  const edges = [];
+  for (let k = 1; k < 7; k++) { const e = vals[Math.floor((k * vals.length) / 7)]; if (e != null && e !== edges[edges.length - 1] && e > vals[0]) edges.push(e); }
+  const lows = [vals[0] ?? 0, ...edges];
+  const nb = lows.length, ramp = interp(RAMP[mode()].seq, Math.max(nb, 2)).slice(0, nb);
+  const rev = m === "count"; // fewer solutions = rarer = darker
+  const bins = lows.map((lo, b) => ({ lo, hi: b + 1 < nb ? lows[b + 1] - 1 : vals[vals.length - 1] ?? lo, color: rev ? ramp[nb - 1 - b] : ramp[b] }));
+  const idx = new Int8Array(A.n).fill(-1);
+  for (let i = 0; i < A.n; i++) {
+    const v = metricValue(A, i, m);
+    if (v == null) continue;
+    let b = 0;
+    while (b + 1 < nb && v >= lows[b + 1]) b++;
+    idx[i] = b;
+  }
+  metricMemo = { key, m, bins, idx, rev };
+  return metricMemo;
+}
+function colorsFor() {
+  const A = S.A, m = mode();
+  if (comparing()) {
+    const d = DIVERGE[m];
+    return { kind: "cmp", d };
+  }
+  if (colorMode() !== "tier") return { kind: "metric", info: metricInfo() };
+  return { kind: "tier", ramp: tierColors(A.T) };
+}
+function cellColor(i, col) {
+  const A = S.A;
+  if (col.kind === "tier") { const t = A.tiers[i]; return t ? col.ramp[t - 1] : UNSOLVED; }
+  if (col.kind === "metric") { const b = col.info.idx[i]; return b < 0 ? UNSOLVED : col.info.bins[b].color; }
+  const key = cmpKey(i);
+  if (key === 0) return col.d.same;
+  return key < 0 ? col.d.easier[Math.min(3, -key) - 1] : col.d.harder[Math.min(3, key) - 1];
+}
+/** tier(B) - tier(A), unsolved counting as one tier past the run's last. */
+function cmpKey(i) {
+  const a = S.A.tiers[i] || S.A.T + 1, b = S.B.tiers[i] || S.B.T + 1;
+  return b - a;
+}
+function legendKeyOf(i) {
+  if (comparing()) { const k = cmpKey(i); return k === 0 ? "0" : k < 0 ? "e" + Math.min(3, -k) : "h" + Math.min(3, k); }
+  if (colorMode() !== "tier") { const b = metricInfo().idx[i]; return b < 0 ? "0" : "b" + b; }
+  return String(S.A.tiers[i]);
+}
+function renderView() {
+  renderColorSeg();
+  $("sortSeg").hidden = S.view !== "sweep";
+  $("finder").hidden = S.view === "sweep";
+  if (S.view === "sweep") { renderSweepView(); return; }
+  $("hm").hidden = false; $("sweep").hidden = true;
+  const A = S.A;
+  const base = $("hmBase"), over = $("hmOver");
+  if (!A) {
+    $("changed").hidden = true;
+    $("viewTitle").textContent = "No run selected";
+    $("viewMeta").textContent = ""; $("legend").innerHTML = "";
+    base.width = base.height = over.width = over.height = 0;
+    renderTrees();
+    return;
+  }
+  const s = A.summary, cmp = comparing();
+  $("viewTitle").textContent = cmp
+    ? `${s.name || s.id}  vs  ${S.B.summary.name || S.B.summary.id}`
+    : (s.name || s.id);
+  const meta = [`${s.digits} digit${s.digits > 1 ? "s" : ""} → ${esc(s.target)}`, `${fmtInt(s.solved)} / ${fmtInt(s.total)}`, fmtTime(s.elapsed_s)];
+  if (A.verify) meta.push(A.verify.ok ? `<span class="ok" title="All solutions verified with mathjs">✓ verified</span>` : `<span class="bad">${fmtInt(A.verify.failure_count)} failed verification</span>`);
+  if (S.B && !cmp) meta.push(`<span title="Runs can only be compared with the same digit count">can't compare</span>`);
+  if (cmp) meta.unshift(compareStats());
+  $("viewMeta").innerHTML = meta.join(`<span style="color:var(--muted)">·</span>`);
+  renderLegend();
+  const d = s.digits;
+  const axis = {
+    1: "One cell per digit 0–9.",
+    2: "Rows: first digit, columns: second digit.",
+    3: "Rows: first digit, columns: last two digits.",
+    4: "Rows: first two digits, columns: last two digits.",
+    5: "One panel per first digit; rows: digits 2–3, columns: digits 4–5.",
+  }[d] + " Hover for the solution, click for its tree; click legend entries to filter.";
+  $("viewTitle").insertAdjacentHTML("beforeend", ` <svg class="ic info" aria-hidden="true"><use href="#i-info"/><title>${esc(axis)}</title></svg>`);
+  drawHeatmap();
+  renderChanged();
+  renderTrees();
+  writeHash();
+}
+
+// ---------------------------------------------------------------- compare: changed puzzles
+function renderChanged() {
+  const el = $("changed");
+  if (!comparing() || S.view !== "run") { el.hidden = true; return; }
+  el.hidden = false;
+  const rows = [];
+  for (let i = 0; i < S.A.n; i++) {
+    const k = cmpKey(i);
+    if (k !== 0 && (S.focus.size === 0 || S.focus.has(legendKeyOf(i)))) rows.push([i, k]);
+  }
+  rows.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]) || x[0] - y[0]);
+  $("changedSum").textContent = `Changed puzzles (${fmtInt(rows.length)})` + (S.focus.size ? " · filtered" : "");
+  const tierCell = (run, i) => (run.tiers[i] ? `T${run.tiers[i]}` : `<span style="color:${UNSOLVED}">–</span>`);
+  const exprCell = (run, i) => (run.tiers[i] ? esc(run.sol[i]) : `<span class="hint" style="margin:0">unsolved</span>`);
+  $("changedTable").innerHTML = `<thead><tr><th>Puzzle</th><th>A</th><th>B</th><th title="Tier in B minus tier in A">Δ</th><th>A solution</th><th>B solution</th></tr></thead><tbody>` +
+    rows.slice(0, S.changedLimit).map(([i, k]) => `<tr data-i="${i}"><td class="mono">${pad(i)}</td><td>${tierCell(S.A, i)}</td><td>${tierCell(S.B, i)}</td>
+      <td class="${k > 0 ? "dh" : "de"}">${k > 0 ? "+" : "−"}${Math.abs(k)}</td><td class="mono x">${exprCell(S.A, i)}</td><td class="mono x">${exprCell(S.B, i)}</td></tr>`).join("") + `</tbody>`;
+  $("changedTable").querySelectorAll("tbody tr").forEach((tr) => (tr.onclick = () => {
+    select(Number(tr.dataset.i));
+    $("treeH").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }));
+  const more = $("changedMore");
+  more.hidden = rows.length <= S.changedLimit;
+  more.textContent = `Show more (${fmtInt(rows.length - S.changedLimit)} left)`;
+}
+$("changedMore").onclick = () => { S.changedLimit += 500; renderChanged(); };
+
+// ---------------------------------------------------------------- target sweep chart
+function showSweep(id) {
+  if (!sweepRuns(id).length) return;
+  S.view = "sweep"; S.sweepId = id; S.focus = new Set();
+  renderRuns(); renderView();
+}
+/** Mean tier per run, unsolved counting as one tier past the last. */
+function meanTier(r) {
+  const T = r.tier_names.length;
+  const sum = r.tier_counts.reduce((a, c, i) => a + c * (i + 1), 0) + (r.total - r.solved) * (T + 1);
+  return r.total ? sum / r.total : 0;
+}
+function renderSweepView() {
+  const rs = sweepRuns(S.sweepId);
+  $("hm").hidden = true; $("changed").hidden = true; $("sweep").hidden = false;
+  if (!rs.length) { S.view = "run"; renderView(); return; }
+  const sw = rs[0].sweep, T = rs[0].tier_names.length;
+  $("viewTitle").textContent = sw.name || "Target sweep";
+  $("viewTitle").insertAdjacentHTML("beforeend", ` <svg class="ic info" aria-hidden="true"><use href="#i-info"/><title>One bar per target: the share of puzzles in each tier. Hover for counts, click a bar to open that run; click legend entries to highlight tiers.</title></svg>`);
+  const easiest = rs.reduce((x, r) => (meanTier(r) < meanTier(x) ? r : x)), hardest = rs.reduce((x, r) => (meanTier(r) > meanTier(x) ? r : x));
+  $("viewMeta").innerHTML = [`${rs[0].digits} digits`, `${rs.length}${rs.length < sw.count ? ` of ${sw.count}` : ""} targets`,
+    `<span title="Lowest mean tier">easiest → ${esc(easiest.target)}</span>`, `<span title="Highest mean tier (unsolved = one past the last tier)">hardest → ${esc(hardest.target)}</span>`]
+    .join(`<span style="color:var(--muted)">·</span>`);
+  // legend: tiers, summed over the sweep
+  const ramp = tierColors(T), counts = new Array(T + 1).fill(0);
+  for (const r of rs) { r.tier_counts.forEach((c, i) => (counts[i + 1] += c)); counts[0] += r.total - r.solved; }
+  const items = rs[0].tier_names.map((nm, i) => [String(i + 1), ramp[i], `T${i + 1} ${nm}`, counts[i + 1]]);
+  items.push(["0", UNSOLVED, "unsolved", counts[0]]);
+  const el = $("legend");
+  el.innerHTML = items.map(([k, c, label, n]) =>
+    `<button data-k="${k}" aria-pressed="${S.focus.has(k)}" title="Click to highlight; click several to combine"><span class="sw" style="background:${c}"></span>${esc(label)} <span class="n">${fmtInt(n)}</span></button>`).join("") +
+    (S.focus.size ? `<button data-k="" class="clear">Show all</button>` : "");
+  el.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.k;
+    if (!k) S.focus.clear(); else if (S.focus.has(k)) S.focus.delete(k); else S.focus.add(k);
+    renderSweepView();
+  }));
+  const seg = $("sortSeg");
+  seg.innerHTML = [["target", "By target", "Bars in target order"], ["mean", "By difficulty", "Bars from easiest to hardest (mean tier)"]]
+    .map(([k, l, t]) => `<button data-k="${k}" aria-pressed="${S.sweepSort === k}" title="${t}">${l}</button>`).join("");
+  seg.querySelectorAll("button").forEach((b) => (b.onclick = () => { S.sweepSort = b.dataset.k; renderSweepView(); }));
+  renderSweep();
+  renderTrees();
+  writeHash();
+}
+function renderSweep() {
+  const rs = sweepRuns(S.sweepId).slice();
+  if (S.sweepSort === "mean") rs.sort((x, y) => meanTier(x) - meanTier(y) || x.sweep.index - y.sweep.index);
+  const T = rs[0].tier_names.length, ramp = tierColors(T);
+  const box = $("sweep"), width = Math.max(320, box.clientWidth || $("hm").parentElement.clientWidth - 32);
+  const left = 40, bottom = 34, top = 8, h = 280;
+  const slot = (width - left - 4) / rs.length, gap = slot >= 8 ? 2 : slot >= 4 ? 1 : 0, bw = Math.max(1, slot - gap);
+  const surf = css("--surface"), muted = css("--muted"), grid = css("--grid");
+  let svg = "";
+  for (const p of [0, 0.25, 0.5, 0.75, 1]) {
+    const y = top + h - p * h;
+    svg += `<line x1="${left}" x2="${width}" y1="${y}" y2="${y}" stroke="${grid}" stroke-width="1"/><text x="${left - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="${muted}">${p * 100}%</text>`;
+  }
+  const every = Math.max(1, Math.ceil(28 / slot));
+  let bars = "";
+  rs.forEach((r, j) => {
+    const x = left + j * slot + gap / 2;
+    const segs = r.tier_counts.map((c, i) => [String(i + 1), c, ramp[i]]);
+    segs.push(["0", r.total - r.solved, UNSOLVED]);
+    let y = top + h, g = "";
+    for (const [k, c, color] of segs) {
+      if (!c) continue;
+      const sh = (c / r.total) * h;
+      y -= sh;
+      const fill = S.focus.size === 0 || S.focus.has(k) ? color : grid;
+      g += `<rect x="${x}" y="${y}" width="${bw}" height="${sh}" fill="${fill}" stroke="${slot >= 6 ? surf : "none"}" stroke-width="${slot >= 6 ? 1 : 0}"/>`;
+    }
+    bars += `<g data-j="${j}">${g}<rect x="${x - gap / 2}" y="${top}" width="${slot}" height="${h}" fill="transparent"/></g>`;
+    if (j % every === 0) svg += `<text x="${x + bw / 2}" y="${top + h + 16}" text-anchor="middle" font-size="11" fill="${muted}">${esc(r.target)}</text>`;
+  });
+  svg += `<text x="${left + (width - left) / 2}" y="${top + h + 31}" text-anchor="middle" font-size="11" fill="${muted}">target${S.sweepSort === "mean" ? " (easiest → hardest)" : ""}</text>`;
+  box.innerHTML = `<svg width="${width}" height="${top + h + bottom + 4}" role="img" aria-label="Share of puzzles per tier for each target">${svg}<g class="bars">${bars}</g></svg>`;
+  box.querySelectorAll(".bars g").forEach((g) => {
+    const r = rs[Number(g.dataset.j)];
+    g.onmousemove = (e) => {
+      const rows = r.tier_names.map((nm, i) => [`T${i + 1} ${nm}`, r.tier_counts[i]]).filter(([, c]) => c);
+      if (r.total - r.solved) rows.push(["unsolved", r.total - r.solved]);
+      tip.innerHTML = `<div class="num">→ ${esc(r.target)}</div><div class="sol"><span class="lbl">mean tier</span> ${meanTier(r).toFixed(2)}</div>` +
+        rows.map(([l, c]) => `<div class="sol">${esc(l)} <span class="lbl">${fmtInt(c)} (${((100 * c) / r.total).toFixed(1)}%)</span></div>`).join("");
+      tip.style.display = "block";
+      tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+      tip.style.top = (e.clientY + 16 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 12 : e.clientY + 16) + "px";
+    };
+    g.onmouseleave = () => (tip.style.display = "none");
+    g.onclick = () => { tip.style.display = "none"; selectRun("A", r.id); };
+  });
+}
+/** GitHub-style diffstat of tier moves from A to B: +harder −easier, weighted by tiers. */
+function compareStats() {
+  let harder = 0, harderSum = 0, easier = 0, easierSum = 0;
+  for (let i = 0; i < S.A.n; i++) {
+    const k = cmpKey(i);
+    if (k > 0) { harder++; harderSum += k; } else if (k < 0) { easier++; easierSum -= k; }
+  }
+  const total = harderSum + easierSum, net = harderSum - easierSum;
+  const p = total ? Math.round((5 * harderSum) / total) : 0, m = total ? 5 - p : 0;
+  const blocks = "<i class='p'></i>".repeat(p) + "<i class='m'></i>".repeat(m) + "<i></i>".repeat(5 - p - m);
+  const sign = (x) => (x > 0 ? "+" : x < 0 ? "−" : "±") + fmtInt(Math.abs(x));
+  const bs = S.B.summary, same = JSON.stringify(S.A.summary.tier_names) === JSON.stringify(bs.tier_names);
+  const tip = `B (${bs.name || bs.id}: ${bs.digits} digits → ${bs.target}, ${fmtInt(bs.solved)} solved) vs A, weighted by tiers moved.\n` +
+    `Harder: ${fmtInt(harder)} puzzles, +${fmtInt(harderSum)} tiers.\nEasier: ${fmtInt(easier)} puzzles, −${fmtInt(easierSum)} tiers.\n` +
+    `Net ${sign(net)} tiers (${(S.A.n ? net / S.A.n : 0).toFixed(3)} per puzzle).\nUnsolved counts as one tier past the run's last.` +
+    (same ? "" : "\nThe tier lists differ, so tiers are compared by number.");
+  return `<span class="diffstat" title="${esc(tip)}"><span class="plus">+${fmtInt(harderSum)}</span><span class="minus">−${fmtInt(easierSum)}</span><span class="blocks">${blocks}</span></span>`;
+}
+function renderLegend() {
+  const A = S.A, el = $("legend"), items = [];
+  if (comparing()) {
+    const d = DIVERGE[mode()], counts = {};
+    for (let i = 0; i < A.n; i++) { const k = legendKeyOf(i); counts[k] = (counts[k] || 0) + 1; }
+    for (let k = 3; k >= 1; k--) items.push(["e" + k, d.easier[k - 1], `B easier by ${k}${k === 3 ? "+" : ""}`, counts["e" + k] || 0]);
+    items.push(["0", d.same, "same tier", counts["0"] || 0]);
+    for (let k = 1; k <= 3; k++) items.push(["h" + k, d.harder[k - 1], `B harder by ${k}${k === 3 ? "+" : ""}`, counts["h" + k] || 0]);
+  } else if (colorMode() !== "tier") {
+    const info = metricInfo(), counts = {};
+    for (let i = 0; i < A.n; i++) { const k = legendKeyOf(i); counts[k] = (counts[k] || 0) + 1; }
+    const fmt = (b) => {
+      const top = info.m === "count" && b.hi >= 100 ? "100+" : b.hi;
+      return b.lo === b.hi ? String(top) : `${b.lo}–${top}`;
+    };
+    const unit = { cost: "cost", len: "chars", count: "solutions" }[info.m];
+    const order = info.bins.map((b, k) => k);
+    if (info.rev) order.reverse(); // light → dark
+    order.forEach((k, j) => items.push(["b" + k, info.bins[k].color, `${fmt(info.bins[k])}${j === 0 ? " " + unit : ""}`, counts["b" + k] || 0]));
+    items.push(["0", UNSOLVED, "unsolved", counts["0"] || 0]);
+  } else {
+    const ramp = tierColors(A.T), counts = new Array(A.T + 1).fill(0);
+    for (let i = 0; i < A.n; i++) counts[A.tiers[i]]++;
+    A.summary.tier_names.forEach((nm, i) => items.push([String(i + 1), ramp[i], `T${i + 1} ${nm}`, counts[i + 1]]));
+    items.push(["0", UNSOLVED, "unsolved", counts[0]]);
+  }
+  const shown = items.filter(([k]) => S.focus.has(k)).reduce((a, it) => a + it[3], 0);
+  el.innerHTML = items.map(([k, c, label, n]) =>
+    `<button data-k="${k}" aria-pressed="${S.focus.has(k)}" title="Click to filter; click several to combine"><span class="sw" style="background:${c}"></span>${esc(label)} <span class="n">${fmtInt(n)}</span></button>`).join("") +
+    (S.focus.size ? `<button data-k="" class="clear" title="Show every puzzle again">Show all <span class="n">(filtered: ${fmtInt(shown)})</span></button>` : "");
+  el.querySelectorAll("button").forEach((b) => (b.onclick = () => {
+    const k = b.dataset.k;
+    if (!k) S.focus.clear();
+    else if (S.focus.has(k)) S.focus.delete(k);
+    else S.focus.add(k);
+    renderLegend();
+    if (S.view === "sweep") renderSweep(); else { drawHeatmap(); renderChanged(); }
+  }));
+}
+function renderColorSeg() {
+  const el = $("colorSeg"), cmp = comparing();
+  el.hidden = S.view !== "run" || !S.A;
+  el.innerHTML = Object.entries(METRICS).map(([k, m]) => {
+    const off = cmp ? k !== "tier" : m.need && !S.A?.[m.need];
+    const why = cmp ? " (compare colours by tier change)" : off ? " (not recorded in this run; re-run it)" : "";
+    return `<button data-k="${k}" aria-pressed="${colorMode() === k}" title="${esc(m.tip + why)}" ${off ? "disabled" : ""}>${m.label}</button>`;
+  }).join("");
+  el.querySelectorAll("button").forEach((b) => (b.onclick = () => { S.colorBy = b.dataset.k; S.focus = new Set(); store.set("traindle.colorBy", S.colorBy); renderView(); }));
+}
+function drawHeatmap() {
+  const A = S.A, wrap = $("hm"), base = $("hmBase");
+  const g = geometry(A.summary.digits, wrap.clientWidth);
+  HM.geom = g;
+  const dpr = window.devicePixelRatio || 1;
+  for (const c of [base, $("hmOver")]) {
+    c.width = Math.ceil(g.width * dpr); c.height = Math.ceil(g.height * dpr);
+    c.style.width = g.width + "px"; c.style.height = g.height + "px";
+  }
+  const ctx = base.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, g.width, g.height);
+  const col = colorsFor();
+  const gap = g.cell >= 10 ? 2 : g.cell >= 5 ? 1 : 0;
+  const dim = css("--grid");
+  for (let i = 0; i < A.n; i++) {
+    const [x, y] = cellRect(g, i);
+    const focused = S.focus.size === 0 || S.focus.has(legendKeyOf(i));
+    ctx.fillStyle = focused ? cellColor(i, col) : dim;
+    ctx.fillRect(x, y, g.cell - gap, g.cell - gap);
+  }
+  // axis labels (recessive)
+  ctx.fillStyle = css("--muted");
+  ctx.font = "11px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  ctx.textBaseline = "middle";
+  const every = (n) => [1, 2, 5, 10, 20, 50].find((s) => s * g.cell >= n) ?? 100;
+  const rStep = every(14), cStep = every(g.colDigits * 8 + 10);
+  for (const p of g.panels) {
+    if (p.prefix) { ctx.textAlign = "left"; ctx.fillStyle = css("--ink-2"); ctx.fillText(p.prefix + "····", p.x, p.y - 9); ctx.fillStyle = css("--muted"); }
+    if (g.rowDigits > 0 && p.x === g.labelW) {
+      ctx.textAlign = "right";
+      for (let r = 0; r < g.rows; r += rStep) ctx.fillText(String(r).padStart(g.rowDigits, "0"), p.x - 5, p.y + (r + 0.5) * g.cell);
+    }
+    if (!p.prefix) {
+      ctx.textAlign = "center";
+      for (let c = 0; c < g.cols; c += cStep) ctx.fillText(String(c).padStart(g.colDigits, "0"), p.x + (c + 0.5) * g.cell, p.y - 9);
+    }
+  }
+  drawOverlay();
+}
+function drawOverlay(hover) {
+  const g = HM.geom, over = $("hmOver");
+  if (!g) return;
+  const dpr = window.devicePixelRatio || 1, ctx = over.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, g.width, g.height);
+  const ring = (i, w, color) => {
+    const [x, y] = cellRect(g, i), s = Math.max(g.cell, 6), off = (s - g.cell) / 2;
+    ctx.lineWidth = w; ctx.strokeStyle = color;
+    ctx.strokeRect(x - off - w / 2, y - off - w / 2, s + w - (g.cell >= 5 ? 1 : 0), s + w - (g.cell >= 5 ? 1 : 0));
+  };
+  if (hover != null && hover !== S.sel) ring(hover, 1.5, css("--ink-2"));
+  if (S.sel != null) { ring(S.sel, 3, css("--surface")); ring(S.sel, 2, css("--focus")); }
+}
+const pad = (i) => String(i).padStart(S.A.summary.digits, "0");
+/** "cost 52 · 14 solutions within +10", or "" for runs saved before these were recorded. */
+function rarityText(run, i) {
+  const parts = [];
+  if (run.hasCost) parts.push(`cost ${run.cost[i]}`);
+  if (run.hasRarity) { const c = run.count[i]; parts.push(`${c >= 100 ? "100+" : c} solution${c === 1 ? "" : "s"} within +${run.slack}`); }
+  return parts.join(" · ");
+}
+function tipHTML(i) {
+  const A = S.A, num = pad(i);
+  const one = (run, tag) => {
+    const t = run.tiers[i];
+    return `<div class="sol">${tag ? `<span class="lbl">${tag}</span> ` : ""}${t
+      ? `<b>T${t}</b> <span class="lbl">${esc(run.summary.tier_names[t - 1])}</span>${rarityText(run, i) ? ` <span class="lbl">· ${rarityText(run, i)}</span>` : ""}<br><span class="mono">${esc(run.sol[i])}</span>`
+      : `<span style="color:${UNSOLVED};font-weight:600">unsolved</span>`}</div>`;
+  };
+  return `<div class="num mono">${num}</div>` + (comparing() ? one(A, "A") + one(S.B, "B") : one(A));
+}
+const hm = $("hm"), tip = $("tip");
+hm.addEventListener("mousemove", (e) => {
+  if (!HM.geom) return;
+  const r = hm.getBoundingClientRect();
+  const i = cellAt(HM.geom, e.clientX - r.left, e.clientY - r.top);
+  if (i == null || i >= S.A.n) { tip.style.display = "none"; drawOverlay(); hm.style.cursor = "default"; return; }
+  hm.style.cursor = "pointer";
+  tip.innerHTML = tipHTML(i);
+  tip.style.display = "block";
+  const tx = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8), ty = e.clientY + 16 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 12 : e.clientY + 16;
+  tip.style.left = tx + "px"; tip.style.top = ty + "px";
+  drawOverlay(i);
+});
+hm.addEventListener("mouseleave", () => { tip.style.display = "none"; drawOverlay(); });
+hm.addEventListener("click", (e) => {
+  if (!HM.geom) return;
+  const r = hm.getBoundingClientRect();
+  const i = cellAt(HM.geom, e.clientX - r.left, e.clientY - r.top);
+  if (i != null && i < S.A.n) select(i);
+});
+hm.addEventListener("keydown", (e) => {
+  if (!S.A || !HM.geom) return;
+  const g = HM.geom, moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -g.cols, ArrowDown: g.cols };
+  if (!(e.key in moves)) return;
+  e.preventDefault();
+  const cur = S.sel ?? 0;
+  select(Math.max(0, Math.min(S.A.n - 1, cur + moves[e.key])));
+});
+function select(i) { if (S.sel !== i) S.alt = { A: 0, B: 0 }; S.sel = i; drawOverlay(); renderTrees(); writeHash(); }
+function find() {
+  const v = $("findNum").value.trim();
+  if (!S.A) return;
+  if (!/^\d+$/.test(v) || v.length !== S.A.summary.digits) { $("findNum").setCustomValidity(`Enter ${S.A.summary.digits} digits`); $("findNum").reportValidity(); return; }
+  $("findNum").setCustomValidity("");
+  select(Number(v));
+  $("treeH").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+$("finder").onsubmit = (e) => { e.preventDefault(); find(); };
+let resizeT;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => (S.view === "sweep" ? renderSweep() : S.A && drawHeatmap()), 120); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => S.A && renderView());
+
+// ---------------------------------------------------------------- expression tree
+const OP_LABEL = { add: "+", subtract: "−", multiply: "×", divide: "÷", pow: "^", mod: "%", unaryMinus: "−", factorial: "!" };
+const FN_LABEL = { combinations: "C", permutations: "P" };
+/** Value tree: boxes hold numbers; the operation that produced a box sits on its arrows. */
+function displayTree(node) {
+  if (node.type === "ParenthesisNode") return displayTree(node.content); // grouping only
+  let op = null, kids = [];
+  if (node.type === "OperatorNode") { op = OP_LABEL[node.fn] ?? node.op; kids = node.args; }
+  else if (node.type === "FunctionNode") { op = FN_LABEL[node.fn.name] ?? node.fn.name; kids = node.args; }
+  let value = null;
+  try { value = node.evaluate(); } catch {}
+  return { op, feature: TraindleVerify.nodeFeature(node), value, kids: kids.map(displayTree) };
+}
+let svgSeq = 0;
+function treeSVG(run, root) {
+  const ramp = tierColors(run.T), tierOf = {};
+  run.summary.config.tiers.forEach((t, i) => t.features.forEach((f) => (tierOf[f] = i + 1)));
+  const show = S.nice ? niceVal : fmtVal;
+  let longest = 0;
+  (function measure(n) { n.label = show(n.value); longest = Math.max(longest, n.label.length); n.kids.forEach(measure); })(root);
+  const W = Math.max(70, Math.ceil(longest * 7.6 + 16)), H = 30, DX = 12, DY = 62, PAD = 4;
+  let leaf = 0, depth = 0;
+  (function place(n, d) {
+    depth = Math.max(depth, d);
+    n.d = d;
+    if (!n.kids.length) { n.x = leaf++ * (W + DX); return; }
+    n.kids.forEach((k) => place(k, d + 1));
+    n.x = (n.kids[0].x + n.kids[n.kids.length - 1].x) / 2;
+  })(root, 0);
+  const width = Math.max(leaf * (W + DX) - DX, W) + 2 * PAD, height = (depth + 1) * (H + DY) - DY + 2 * PAD;
+  const ink = css("--ink"), edge = css("--ink-2"), surf = css("--surface"), border = css("--axis");
+  const mid = "arr" + ++svgSeq;
+  const tierName = (t) => run.summary.tier_names[t - 1];
+  let lines = "", pills = "", boxes = "";
+  const pill = (cx, cy, n) => {
+    const t = tierOf[n.feature];
+    const fill = t ? ramp[t - 1] : surf, txt = t ? inkOn(fill) : ink;
+    const label = n.op.length > 10 ? n.op.slice(0, 9) + "…" : n.op;
+    const w = Math.max(22, label.length * 7.5 + 12);
+    pills += `<g><title>${esc(n.op)}${t ? ` · tier ${t}: ${esc(tierName(t))}` : ""}</title>
+      <rect x="${cx - w / 2}" y="${cy - 10}" width="${w}" height="20" rx="10" fill="${fill}" stroke="${t ? "none" : border}"/>
+      <text x="${cx}" y="${cy + 4.5}" text-anchor="middle" font-size="12.5" font-weight="650" fill="${txt}">${esc(label)}</text></g>`;
+  };
+  (function draw(n) {
+    const cx = n.x + PAD + W / 2, y = n.d * (H + DY) + PAD;
+    if (n.kids.length) {
+      const bottom = y + H;
+      const kidTop = (k) => [k.x + PAD + W / 2, k.d * (H + DY) + PAD];
+      if (n.kids.length === 1) {
+        const [kx, ky] = kidTop(n.kids[0]);
+        lines += `<line x1="${kx}" y1="${ky}" x2="${cx}" y2="${bottom + 1}" stroke="${edge}" stroke-width="1.5" marker-end="url(#${mid})"/>`;
+        pill(cx, (ky + bottom) / 2, n);
+      } else {
+        // operands meet at a junction; one arrow carries the operation to the result
+        const jy = bottom + DY * 0.62;
+        for (const k of n.kids) {
+          const [kx, ky] = kidTop(k);
+          lines += `<line x1="${kx}" y1="${ky}" x2="${cx}" y2="${jy}" stroke="${edge}" stroke-width="1.5"/>`;
+        }
+        lines += `<line x1="${cx}" y1="${jy}" x2="${cx}" y2="${bottom + 1}" stroke="${edge}" stroke-width="1.5" marker-end="url(#${mid})"/>`;
+        pill(cx, (jy + bottom) / 2 - 2, n);
+      }
+    }
+    // joined digits (concatenation) are a tier feature too: tint their box
+    const t = !n.kids.length && n.feature ? tierOf[n.feature] : null;
+    const fill = t ? ramp[t - 1] : surf, txt = t ? inkOn(fill) : ink;
+    const isRoot = n === root;
+    boxes += `<g><title>${esc(fmtVal(n.value))}${t ? ` · joined digits (tier ${t}: ${esc(tierName(t))})` : ""}</title>
+      <rect x="${cx - W / 2}" y="${y}" width="${W}" height="${H}" rx="6" fill="${fill}" stroke="${isRoot ? ink : t ? "none" : border}" stroke-width="${isRoot ? 1.5 : 1}"/>
+      <text x="${cx}" y="${y + H / 2 + 4.5}" text-anchor="middle" font-size="13" font-weight="${isRoot || !n.kids.length ? 650 : 500}" fill="${txt}">${esc(n.label)}</text></g>`;
+    n.kids.forEach(draw);
+  })(root);
+  return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Expression tree: numbers in boxes, operations on the arrows">
+    <defs><marker id="${mid}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="${edge}"/></marker></defs>
+    ${lines}${pills}${boxes}</svg>
+`;
+}
+function treeBox(run, i, tag) {
+  const num = pad(i), slot = tag || "A";
+  const head = `<h3>${tag ? tag + " · " : ""}${esc(run.summary.name || run.summary.id)}</h3>`;
+  if (!run.tiers[i]) return `<div class="treebox">${head}<div class="expr"><b class="mono">${num}</b> <span style="color:${UNSOLVED};font-weight:600">unsolved</span> in this run</div></div>`;
+  const all = [run.sol[i], ...(run.alts[i] ?? [])], k = Math.min(S.alt[slot] ?? 0, all.length - 1), expr = all[k];
+  let t = run.tiers[i];
+  let svg = "";
+  try {
+    const tree = math.parse(expr);
+    if (k > 0) {
+      // alternatives are stored without a tier: derive it from the features they use
+      const tierOf = {};
+      run.summary.config.tiers.forEach((x, j) => x.features.forEach((f) => (tierOf[f] = j + 1)));
+      t = Math.max(1, ...[...TraindleVerify.featuresOf(tree)].map((f) => tierOf[f] ?? 1));
+    }
+    svg = treeSVG(run, displayTree(tree));
+  } catch (e) { svg = `<div class="empty">Could not parse: ${esc(e.message)}</div>`; }
+  const pills = all.length > 1
+    ? `<div class="alts" role="group" aria-label="Solutions"><span title="The best solution, then alternatives within the rarity window (cheapest first)">Solution</span>${all.map((_, j) =>
+        `<button data-slot="${slot}" data-k="${j}" aria-pressed="${j === k}" title="${j ? `Alternative ${j}` : "Best solution"}">${j + 1}</button>`).join("")}</div>`
+    : "";
+  const extra = rarityText(run, i);
+  return `<div class="treebox">${head}${pills}<div class="expr"><b class="mono">${num}</b> = <span class="mono">${esc(expr)}</span>
+    <br><span class="hint">tier ${t}: ${esc(run.summary.tier_names[t - 1] ?? "")} · target ${esc(run.summary.target)}${extra && k === 0 ? " · " + esc(extra) : ""}</span></div>
+    <div class="svgwrap">${svg}</div></div>`;
+}
+function renderTrees() {
+  const el = $("trees");
+  if (S.view === "sweep") { el.innerHTML = `<div class="empty">Click a bar to open that target's run.</div>`; return; }
+  if (!S.A || S.sel == null) { el.innerHTML = `<div class="empty">${S.A ? "Click a cell." : "Pick a run."}</div>`; return; }
+  if (typeof math === "undefined") { el.innerHTML = `<div class="empty">mathjs did not load, so trees can't be drawn.</div>`; return; }
+  el.innerHTML = treeBox(S.A, S.sel, comparing() ? "A" : "") + (comparing() ? treeBox(S.B, S.sel, "B") : "");
+  el.querySelectorAll(".alts button").forEach((b) => (b.onclick = () => { S.alt[b.dataset.slot] = Number(b.dataset.k); renderTrees(); }));
+}
+
+// ---------------------------------------------------------------- deep links + theme
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  return { a: h.get("a"), b: h.get("b"), sel: h.get("sel"), sweep: h.get("sweep"), c: h.get("c") };
+}
+/** Open the runs / puzzle named in the URL hash. Returns false if it names no known run. */
+async function applyLink() {
+  const link = readHash();
+  const known = (id) => id && S.runs.some((r) => r.id === id);
+  if (link.c && METRICS[link.c]) S.colorBy = link.c;
+  if (link.sweep && sweepRuns(link.sweep).length) {
+    if (S.view !== "sweep" || S.sweepId !== link.sweep) { S.openSweeps.add(link.sweep); showSweep(link.sweep); }
+    return true;
+  }
+  if (!known(link.a)) return false;
+  if (S.A?.summary.id !== link.a) await selectRun("A", link.a);
+  if (known(link.b) && S.B?.summary.id !== link.b) await selectRun("B", link.b);
+  else if (!link.b && S.B) { S.B = null; renderRuns(); renderView(); }
+  if (link.sel && /^\d+$/.test(link.sel) && Number(link.sel) < S.A.n) select(Number(link.sel));
+  return true;
+}
+function writeHash() {
+  const h = new URLSearchParams();
+  if (S.view === "sweep" && S.sweepId) {
+    h.set("sweep", S.sweepId);
+    const str = h.toString();
+    if (location.hash.slice(1) !== str) history.replaceState(null, "", "#" + str);
+    return;
+  }
+  if (S.colorBy !== "tier") h.set("c", S.colorBy);
+  if (S.A) h.set("a", S.A.summary.id);
+  if (S.B) h.set("b", S.B.summary.id);
+  if (S.A && S.sel != null) h.set("sel", pad(S.sel));
+  const str = h.toString();
+  if (location.hash.slice(1) !== str) history.replaceState(null, "", str ? "#" + str : location.pathname);
+}
+const THEMES = ["auto", "light", "dark"];
+function applyTheme(t) {
+  if (t === "auto") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  $("themeBtn").innerHTML = `<svg class="ic"><use href="#i-${t === "auto" ? "auto" : t === "light" ? "sun" : "moon"}"/></svg>`;
+  $("themeBtn").title = "Theme: " + t;
+  store.set("traindle.theme", t);
+  if (S.A) renderView();
+}
+$("themeBtn").onclick = () => {
+  const cur = document.documentElement.dataset.theme || "auto";
+  applyTheme(THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length]);
+};
+applyTheme(new URLSearchParams(location.search).get("theme") || store.get("traindle.theme") || "auto");
+
+// ---------------------------------------------------------------- tree value format toggle
+S.nice = store.get("traindle.nice") ?? true;
+function applyNice() {
+  $("niceBtn").setAttribute("aria-pressed", String(S.nice));
+  $("niceBtn").style.background = S.nice ? "var(--surface-2)" : "";
+  $("niceBtn").style.color = S.nice ? "var(--ink)" : "var(--muted)";
+}
+$("niceBtn").onclick = () => { S.nice = !S.nice; store.set("traindle.nice", S.nice); applyNice(); renderTrees(); };
+applyNice();
+S.colorBy = METRICS[store.get("traindle.colorBy")] ? store.get("traindle.colorBy") : "tier";
+
+// ---------------------------------------------------------------- boot
+(async function boot() {
+  try {
+    const d = await api("/api/defaults");
+    S.defaults = d;
+    S.features = d.features;
+    S.feat = Object.fromEntries(d.features.map((f) => [f.id, f]));
+    const saved = store.get("traindle.cfg");
+    S.cfg = saved && Array.isArray(saved.tiers) ? saved : cfgFromServer(d.config);
+    // drop unknown features from an old saved config
+    S.cfg.tiers.forEach((t) => (t.features = t.features.filter((f) => S.feat[f])));
+    for (const [k, v] of Object.entries(d.config.weights)) if (!(k in S.cfg.weights)) S.cfg.weights[k] = v;
+    renderEditor();
+  } catch (e) {
+    $("problems").innerHTML = `<div class="err">Could not reach the solver server: ${esc(e.message)}</div>`;
+    return;
+  }
+  if (typeof math === "undefined") $("verState").innerHTML = `<span class="bad">mathjs failed to load</span>, so verification and trees are unavailable (offline? run npm install in verify/).`;
+  await loadRuns();
+  if (!(await applyLink()) && S.runs.length) await selectRun("A", S.runs[0].id);
+  else if (!S.runs.length) renderView();
+  // a pasted or edited #a=...&b=...&sel=... link applies without a reload
+  addEventListener("hashchange", () => applyLink());
+  try { const st = await api("/api/status"); if (st.state === "running") { S.jobId = st.id; startPolling(); } } catch {}
+  validate(); // the run-time estimate needs the runs list
+})();
+</script>
+</body>
+</html>
