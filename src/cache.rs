@@ -10,9 +10,9 @@ use crate::span::{build_set, Ctx, SpanSet};
 use rayon::prelude::*;
 use std::sync::atomic::Ordering;
 
-/// Longest substring with a set (5-digit puzzles split into at most 4 + 1).
-pub const MAX_SUB: usize = 4;
-const OFF: [usize; MAX_SUB + 2] = [0, 0, 10, 110, 1110, 11110];
+/// Longest substring with a set (6-digit puzzles split into at most 5 + 1).
+pub const MAX_SUB: usize = 5;
+const OFF: [usize; MAX_SUB + 2] = [0, 0, 10, 110, 1110, 11110, 111110];
 pub const N_CODES: usize = OFF[MAX_SUB + 1];
 
 #[inline]

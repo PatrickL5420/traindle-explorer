@@ -5,7 +5,7 @@ mathematical operators you like, write an expression equal to 10. For example,
 `2 * 4 - 7 + 9 = 10`.
 
 **This program** finds the simplest solution for every one of the 10,000 puzzles (`0000`–`9999`)
-and lets you explore them. You can also change the rules: any target, 1–5 digits, and which
+and lets you explore them. You can also change the rules: any target, 1–6 digits, and which
 operators are allowed.
 
 Operators are grouped into **tiers**, tried from easiest to hardest. A puzzle's tier is the
@@ -53,7 +53,8 @@ cargo build --release
 On Windows, run `.\target\release\traindle-explorer.exe serve`. Run it from the repository folder;
 saved runs go in `runs/`.
 
-The default game takes about half a minute and ~1.5 GB of RAM.
+The default game takes about half a minute and ~1.5 GB of RAM. 6 digits (a million puzzles) also
+takes about half a minute, but needs ~3.5 GB.
 
 ## Using the explorer
 
@@ -61,7 +62,8 @@ The default game takes about half a minute and ~1.5 GB of RAM.
   then press Run. Presets offer some alternative rule sets.
 - **Heatmap:** one cell per puzzle, coloured by tier. Hover for the solution, click for a tree
   diagram of it. You can also colour by cost, length or rarity (how few solutions a puzzle has).
-- **Alternatives:** besides the best solution, up to four near-best ones are kept per puzzle.
+- **Alternatives:** every solution found close to the best one (within the *Rarity ±* cost
+  window) is kept. A dropdown above the tree lets you step through them all.
 - **Compare:** pick two runs (A and B) to see which puzzles got easier or harder, with a list of
   every change.
 - **Sweep:** enter a range of targets (e.g. `1..20`) to run each one and compare them in a chart.

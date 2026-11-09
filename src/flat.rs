@@ -13,7 +13,7 @@ use crate::expr::Expr;
 use crate::ops::*;
 use crate::span::{mk_score, parse_digits};
 
-const MAXD: usize = 5;
+const MAXD: usize = 6;
 
 #[inline]
 fn is_mul_level(op: u8) -> bool {

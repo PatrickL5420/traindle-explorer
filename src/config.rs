@@ -150,7 +150,7 @@ pub struct TierDef {
 #[serde(default)]
 pub struct SolverConfig {
     pub name: String,
-    /// number of digits per puzzle (1..=5)
+    /// number of digits per puzzle (1..=6)
     pub digits: usize,
     /// target value, as a decimal string (e.g. "10", "-3", "0.5")
     pub target: String,
@@ -229,8 +229,8 @@ impl Default for SolverConfig {
 impl SolverConfig {
     /// Check the config and fill in derived fields (tier names, missing weights).
     pub fn normalize(&mut self) -> Result<(), String> {
-        if !(1..=5).contains(&self.digits) {
-            return Err("digits must be between 1 and 5".into());
+        if !(1..=6).contains(&self.digits) {
+            return Err("digits must be between 1 and 6".into());
         }
         self.target = self.target.trim().to_string();
         if self.target.contains(['e', 'E']) {

@@ -15,8 +15,29 @@ pub struct Entry {
     pub cost: u32,
     /// rarity: distinct verified solutions within `alt_slack` of the best
     pub count: u16,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub alts: Vec<String>,
+}
+
+/// Alternatives live next to the solutions file (`solutions.json` ->
+/// `solutions.alts.jsonl`): too many to load up front for big runs, so the web UI fetches
+/// one puzzle's line at a time. One line per puzzle that has alternatives, in puzzle
+/// order: `["0123",[[cost,"expr"],...]]`.
+pub fn alts_path(solutions: &Path) -> PathBuf {
+    let stem = solutions.file_stem().and_then(|s| s.to_str()).unwrap_or("solutions");
+    solutions.with_file_name(format!("{stem}.alts.jsonl"))
+}
+
+pub fn write_alts(path: &Path, numbers: &[Vec<u8>], res: &RunResult) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
+    for (n, s) in numbers.iter().zip(&res.solutions) {
+        let Some(s) = s else { continue };
+        if s.alts.is_empty() {
+            continue;
+        }
+        let num = std::str::from_utf8(n).unwrap();
+        writeln!(w, "{}", serde_json::to_string(&(num, &s.alts))?)?;
+    }
+    w.flush()
 }
 
 #[derive(Serialize)]
@@ -125,7 +146,7 @@ pub fn build_outputs(
                 if (1..=tier_counts.len()).contains(&(s.tier as usize)) {
                     tier_counts[s.tier as usize - 1] += 1;
                 }
-                entries.push(Entry { number: num, solution: s.expr.clone(), tier: s.tier, cost: s.cost, count: s.count, alts: s.alts.clone() });
+                entries.push(Entry { number: num, solution: s.expr.clone(), tier: s.tier, cost: s.cost, count: s.count });
             }
             None => unsolved.push(num),
         }
@@ -152,10 +173,13 @@ pub fn build_outputs(
     (entries, summary)
 }
 
-/// Write `config.json`, `solutions.json` and `summary.json` into `dir`.
-pub fn save_run(dir: &PathBuf, entries: &[Entry], summary: &Summary) -> std::io::Result<()> {
+/// Write `config.json`, `solutions.json` (compact: it can hold a million puzzles),
+/// `solutions.alts.jsonl` and `summary.json` into `dir`.
+pub fn save_run(dir: &PathBuf, entries: &[Entry], summary: &Summary, numbers: &[Vec<u8>], res: &RunResult) -> std::io::Result<()> {
     std::fs::create_dir_all(dir)?;
     write_json(&dir.join("config.json"), &summary.config, true)?;
-    write_json(&dir.join("solutions.json"), &entries, true)?;
+    let sols = dir.join("solutions.json");
+    write_json(&sols, &entries, false)?;
+    write_alts(&alts_path(&sols), numbers, res)?;
     write_json(&dir.join("summary.json"), summary, true)
 }

@@ -7,16 +7,15 @@
 use crate::expr::Expr;
 use hashbrown::HashSet;
 
-/// Most solutions kept per puzzle; the rarity count saturates here.
+/// Most solutions kept per puzzle; the rarity count saturates here. Every one of them
+/// (besides the best) is saved as an alternative.
 pub const CAP: usize = 100;
-/// Alternatives stored with a run (besides the best).
-pub const ALTS: usize = 4;
 
 pub struct Found {
     pub expr: Expr,
     pub score: u32,
-    /// next-best distinct solutions, best first
-    pub alts: Vec<String>,
+    /// the other solutions in the window, cheapest first: (cost, text)
+    pub alts: Vec<(u32, String)>,
     /// distinct verified solutions within the window (incl. the best), capped at CAP
     pub count: u16,
 }
@@ -111,7 +110,7 @@ impl Collector {
         let count = self.list.len() as u16;
         let mut it = self.list.into_iter();
         let (score, _, expr) = it.next()?;
-        let alts = it.take(ALTS).map(|x| x.1).collect();
+        let alts = it.map(|x| (x.0 >> 12, x.1)).collect();
         Some(Found { expr, score, alts, count })
     }
 }

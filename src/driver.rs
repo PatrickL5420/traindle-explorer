@@ -22,7 +22,8 @@ pub struct Solved {
     pub cost: u32,
     /// distinct verified solutions within the rarity window (incl. this one)
     pub count: u16,
-    pub alts: Vec<String>,
+    /// the other solutions in the rarity window: (cost, text), cheapest first
+    pub alts: Vec<(u32, String)>,
 }
 
 #[derive(Serialize, Clone, Debug)]

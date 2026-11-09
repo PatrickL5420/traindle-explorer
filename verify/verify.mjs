@@ -2,7 +2,7 @@
 // real Traindle game (which evaluates with mathjs 15.2).
 //
 //   node verify/verify.mjs output/solutions.json [--summary output/summary.json] [--ref ref_solutions.json]
-//   node verify/verify.mjs runs/<id>/solutions.json
+//   node verify/verify.mjs runs/<id>/solutions.json [--skip-alts]
 //
 // Uses the same checks as the web UI (web/verify-core.js): the game's validExpression /
 // hasFourNumbers / evaluateExpression (generalised to n digits and any target), exact
@@ -27,11 +27,24 @@ const opt = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : null;
 };
-const file = args.find((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--"))) ?? "output/solutions.json";
+const VALUE_OPTS = ["--summary", "--ref"];
+const file = args.find((a, i) => !a.startsWith("--") && !(i > 0 && VALUE_OPTS.includes(args[i - 1]))) ?? "output/solutions.json";
 const summaryFile = opt("--summary") ?? path.join(path.dirname(file), "summary.json");
 const refFile = opt("--ref");
 
 const sols = JSON.parse(fs.readFileSync(file, "utf8"));
+// alternatives sit next to the solutions (solutions.json -> solutions.alts.jsonl);
+// --skip-alts checks only the best solutions (much faster on big runs)
+const altsFile = path.join(path.dirname(file), path.basename(file, path.extname(file)) + ".alts.jsonl");
+if (!args.includes("--skip-alts") && fs.existsSync(altsFile)) {
+  const byNum = new Map(sols.map((s) => [s.number, s]));
+  for (const line of fs.readFileSync(altsFile, "utf8").split(/\r?\n/)) {
+    if (!line) continue;
+    const [num, alts] = JSON.parse(line);
+    const s = byNum.get(num);
+    if (s) s.alts = alts.map((a) => a[1]);
+  }
+}
 if (!fs.existsSync(summaryFile)) {
   console.error(`no ${summaryFile}: pass --summary with the run's summary.json (it carries the tier config)`);
   process.exit(2);

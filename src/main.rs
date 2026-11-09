@@ -66,7 +66,7 @@ struct SolveArgs {
     /// Solver config JSON (as saved in runs/<id>/config.json); flags below override it
     #[arg(long)]
     config: Option<PathBuf>,
-    /// Digits per puzzle (1-5)
+    /// Digits per puzzle (1-6)
     #[arg(long)]
     digits: Option<usize>,
     /// Target value (e.g. 10, 24, -3, 0.5)
@@ -195,7 +195,8 @@ fn solve(args: SolveArgs) -> std::io::Result<()> {
             }
         }
     }
-    runs::write_json(&args.out, &entries, true)?;
+    runs::write_json(&args.out, &entries, false)?;
+    runs::write_alts(&runs::alts_path(&args.out), &numbers, &res)?;
     runs::write_json(&args.summary, &summary, true)?;
 
     eprintln!("\nsolved {}/{} in {:.2} s", summary.solved, summary.total, elapsed);

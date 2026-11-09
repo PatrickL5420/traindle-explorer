@@ -53,6 +53,55 @@ struct Job {
 struct App {
     runs_dir: PathBuf,
     job: Mutex<Option<Arc<Job>>>,
+    /// per run: (puzzle number, byte offset) of each line of its alternatives file
+    alt_index: Mutex<Vec<(String, Arc<AltIndex>)>>,
+}
+
+struct AltIndex {
+    path: PathBuf,
+    lines: Vec<(u32, u64)>,
+}
+
+/// Index a `solutions.alts.jsonl` file: the puzzle number and offset of every line.
+fn index_alts(path: &Path) -> std::io::Result<AltIndex> {
+    let bytes = std::fs::read(path)?;
+    let mut lines = Vec::new();
+    let mut start = 0usize;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'\n' {
+            // a line starts with ["<digits>"
+            let num: u32 = bytes[start..i].iter().skip(2).take_while(|c| c.is_ascii_digit()).fold(0, |a, &c| a * 10 + (c - b'0') as u32);
+            lines.push((num, start as u64));
+            start = i + 1;
+        }
+    }
+    Ok(AltIndex { path: path.to_path_buf(), lines })
+}
+
+/// The alternatives of one puzzle as a JSON array of [cost, expression] ("[]" if none).
+fn alts_for(app: &App, id: &str, number: &str) -> std::io::Result<String> {
+    use std::io::{BufRead, Seek, SeekFrom};
+    let path = crate::runs::alts_path(&app.runs_dir.join(id).join("solutions.json"));
+    let idx = {
+        let mut cache = app.alt_index.lock().unwrap();
+        match cache.iter().find(|(k, _)| k == id) {
+            Some((_, ix)) => ix.clone(),
+            None => {
+                let ix = Arc::new(index_alts(&path)?);
+                cache.insert(0, (id.to_string(), ix.clone()));
+                cache.truncate(4); // a few recent runs (A, B, ...)
+                ix
+            }
+        }
+    };
+    let n: u32 = number.parse().map_err(|_| std::io::Error::other("bad number"))?;
+    let Ok(k) = idx.lines.binary_search_by_key(&n, |l| l.0) else { return Ok("[]".into()) };
+    let mut f = std::io::BufReader::new(std::fs::File::open(&idx.path)?);
+    f.seek(SeekFrom::Start(idx.lines[k].1))?;
+    let mut line = String::new();
+    f.read_line(&mut line)?;
+    let v: Value = serde_json::from_str(line.trim()).map_err(std::io::Error::other)?;
+    Ok(v[1].to_string())
 }
 
 fn header(k: &str, v: &str) -> Header {
@@ -83,7 +132,7 @@ pub fn serve(port: u16, runs_dir: PathBuf, open: bool) -> std::io::Result<()> {
     if open {
         open_browser(&url);
     }
-    let app = Arc::new(App { runs_dir, job: Mutex::new(None) });
+    let app = Arc::new(App { runs_dir, job: Mutex::new(None), alt_index: Mutex::new(Vec::new()) });
     for req in server.incoming_requests() {
         let app = app.clone();
         // requests are cheap; one thread each keeps a slow file read from blocking polls
@@ -139,6 +188,20 @@ fn handle(app: &App, mut req: Request) {
             req.respond(json_resp(&json!({ "ok": true }), 200))
         }
         (Method::Get, ["api", "runs"]) => req.respond(json_resp(&list_runs(&app.runs_dir), 200)),
+        (Method::Get, ["api", "runs", id, "alts", number]) => {
+            let ok = valid_id(id) && !number.is_empty() && number.len() <= 6 && number.bytes().all(|c| c.is_ascii_digit());
+            let r = if !ok {
+                err("not found", 404)
+            } else {
+                match alts_for(app, id, number) {
+                    Ok(s) => Response::from_string(s)
+                        .with_header(header("Content-Type", "application/json"))
+                        .with_header(header("Cache-Control", "no-store")),
+                    Err(_) => err("no alternatives file for this run", 404),
+                }
+            };
+            req.respond(r)
+        }
         (Method::Get, ["api", "runs", id, file]) => {
             let allowed = ["config.json", "solutions.json", "summary.json", "verify.json"];
             if !valid_id(id) || !allowed.contains(file) {
@@ -209,7 +272,7 @@ fn defaults() -> Value {
             })
         })
         .collect();
-    json!({ "config": cfg, "features": features, "max_digits": 5 })
+    json!({ "config": cfg, "features": features, "max_digits": 6 })
 }
 
 /// Start a run (`{config}`) or a sweep (`{config, targets: [..]}`).
@@ -296,7 +359,7 @@ fn start_job(app: &App, body: &str, sweep: bool) -> Response<std::io::Cursor<Vec
             let elapsed = t0.elapsed().as_secs_f64();
             let info = job.sweep.as_ref().map(|(sid, n)| SweepInfo { id: sid.clone(), name: job.name.clone(), index: i, count: *n });
             let (entries, summary) = build_outputs(&id, &numbers, cfg, &res, elapsed, info);
-            match save_run(&runs_dir.join(&id), &entries, &summary) {
+            match save_run(&runs_dir.join(&id), &entries, &summary, &numbers, &res) {
                 Ok(_) if res.cancelled => state = ("cancelled".to_string(), None),
                 Ok(_) => {}
                 Err(e) => {
