@@ -32,41 +32,88 @@ Literal rules: joined digits need the concatenation feature, and a multi-digit l
 start with 0 (`06` is just `0 + 6` in disguise). Each joined digit costs a little (weight
 `concat`, default 4, below every operator).
 
-## Requirements
+## Building
 
-- **Rust** (stable, via [rustup](https://rustup.rs)) with a C compiler for the `mimalloc` allocator:
-  - Windows: the MSVC build tools (installed by rustup).
-  - macOS: `xcode-select --install`.
-  - Linux: `build-essential` or equivalent.
-- **Node.js 18+**: only for the command-line verifiers in `verify/`. The web UI verifies in the
-  browser and loads mathjs from the CDN when `verify/node_modules` is missing.
-- About 2 GB of free RAM for the default game, more for deep tiers on 5 digits.
+Traindle Explorer is a single Rust program. Build it from source on Windows, macOS or Linux; it
+needs about 2 GB of free RAM for the default game, more for deep tiers on 5 digits.
 
-Linux, macOS and Windows are built and tested in CI (`.github/workflows/ci.yml`).
+### 1. Install the tools
 
-Run the binary from the repository root. `runs/`, `output/` and the optional `web/` and
-`verify/node_modules` overrides are looked up relative to the current directory. The page itself
-is embedded, so the server also works from elsewhere.
+**Rust** (stable) comes from [rustup](https://rustup.rs). It also needs a C compiler, for the
+`mimalloc` memory allocator:
+
+- **Windows:** run `rustup-init.exe` from [rustup.rs](https://rustup.rs) and accept its offer to
+  install the Visual Studio C++ Build Tools (or install them yourself: *Desktop development with
+  C++*).
+- **macOS:** install the compiler with `xcode-select --install`, then rustup:
+  ```bash
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  ```
+- **Linux:** install a compiler first (Debian/Ubuntu: `sudo apt install build-essential curl`;
+  Fedora: `sudo dnf install gcc curl`), then rustup with the same `curl … | sh` line as macOS.
+
+Open a new terminal afterwards and check that `cargo --version` works.
+
+**Node.js 18+** ([nodejs.org](https://nodejs.org)) is optional. You only need it for the
+command-line verifiers in `verify/`, or to serve mathjs locally instead of from a CDN.
+
+### 2. Build
+
+```bash
+git clone https://github.com/PatrickL5420/traindle-explorer.git
+cd traindle-explorer
+cargo build --release
+```
+
+The first build downloads dependencies and takes a few minutes. The program ends up in
+`target/release/traindle-explorer` (`traindle-explorer.exe` on Windows).
+
+Optional checks:
+
+```bash
+cargo test --release                     # unit tests
+cd verify && npm install && cd ..        # local mathjs for the verifiers and the web UI
+```
+
+### 3. Run
+
+```bash
+./target/release/traindle-explorer serve     # web UI, opens http://127.0.0.1:7878/
+./target/release/traindle-explorer           # default game on the command line -> output/
+```
+
+On Windows, write `.\target\release\traindle-explorer.exe` in PowerShell or `cmd`.
+
+Run it from the repository folder. Saved runs (`runs/`), command-line output (`output/`) and the
+optional `web/` and `verify/node_modules` overrides are found relative to the current folder.
+The page itself is built into the program, so the server works from anywhere. Without
+`verify/node_modules`, the page loads mathjs from a CDN, which needs internet access.
 
 ### Faster builds for your own CPU
 
-The default build is portable. To optimise for the machine you build on (about 15% faster here,
-with identical results), add the flag:
+The default build runs on any machine. To optimise for the CPU you build on (about 15% faster
+here, with identical results), build with:
 
 ```bash
-RUSTFLAGS="-C target-cpu=native" cargo build --release          # bash / zsh
+RUSTFLAGS="-C target-cpu=native" cargo build --release          # macOS / Linux / Git Bash
 $env:RUSTFLAGS="-C target-cpu=native"; cargo build --release    # PowerShell
 ```
 
-A binary built this way may crash with "illegal instruction" on other CPUs, so don't share it.
+A binary built this way may crash with "illegal instruction" on other computers, so don't share
+it.
+
+### Troubleshooting
+
+- **`linker 'link.exe' not found` (Windows) or `cc not found` / `linker 'cc' not found`:** the C
+  compiler from step 1 is missing.
+- **Port 7878 in use:** `traindle-explorer serve --port 8080`.
+- **The browser doesn't open:** use `--no-open` and open the printed address yourself.
+- **Out of memory on 5 digits:** close other programs, or limit the tiers with `--max-tier N`.
 
 ## Web UI
 
-```bash
-cargo build --release
-cd verify && npm install && cd ..        # optional: local mathjs (otherwise loaded from the CDN)
-./target/release/traindle-explorer serve   # opens http://127.0.0.1:7878/
-```
+Start it with `traindle-explorer serve` (see [Building](#building)); it opens
+http://127.0.0.1:7878/. Options: `--port N`, `--runs-dir DIR`, `--no-open`.
 
 - **New run:** a name, digit count (1–5) and target (any number, e.g. 24, -3 or 0.5).
 - **Target sweep:** enter several targets to run one after another, e.g. `1..20`, `0..1..0.25`
