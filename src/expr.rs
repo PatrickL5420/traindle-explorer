@@ -1,5 +1,5 @@
-//! Expression trees: reconstruction, minimal-paren mathjs rendering, f64 evaluation
-//! (mathjs semantics) and 256-bit verification.
+//! Expression trees: reconstruction, minimal-paren rendering in the game's notation,
+//! f64 evaluation and 256-bit verification of the true value.
 
 use crate::cache::Cache;
 use crate::ops::*;
@@ -218,7 +218,7 @@ fn small_int(f: f64, b: &BigFloat) -> Option<u64> {
     }
 }
 
-/// Every node's f64 value (what mathjs computes) must agree with its 256-bit value to
+/// Every node's f64 value (what the game computes) must agree with its 256-bit value to
 /// 1e-9 relative (scaled by the operands, so cancellation noise is tolerated). Catches
 /// float artefacts the final answer alone can't reveal, e.g. 7^(4e-4810) == 7^0 in
 /// floats, or a tolerant floor in `%` that differs from the exact one.
@@ -231,7 +231,8 @@ fn consistent(rf: f64, r: BigFloat, operand_scale: f64) -> Option<(f64, BigFloat
     }
 }
 
-/// Evaluate in f64 (mathjs semantics, for branch decisions) and 256-bit in parallel.
+/// Evaluate in f64 (the game's arithmetic) and in 256-bit precision (the mathematical
+/// value) side by side. Undefined operations return None in both.
 fn hp_eval(e: &Expr, cc: &mut Consts) -> Option<(f64, BigFloat)> {
     match e {
         Expr::Lit(s) => Some((s.parse().ok()?, BigFloat::from_u64(s.parse().ok()?, P))),
@@ -294,13 +295,8 @@ fn hp_eval(e: &Expr, cc: &mut Consts) -> Option<(f64, BigFloat)> {
                 }
                 ACOT => {
                     if x.is_zero() {
-                        // atan(1/±0) = ±pi/2, sign from the f64 evaluation
-                        let half_pi = cc.pi(P, RM).div(&BigFloat::from_u8(2, P), P, RM);
-                        if xf.is_sign_negative() {
-                            half_pi.neg()
-                        } else {
-                            half_pi
-                        }
+                        // acot(0) = pi/2 (raw_un already rejected a negative zero)
+                        cc.pi(P, RM).div(&BigFloat::from_u8(2, P), P, RM)
                     } else {
                         one().div(&x, P, RM).atan(P, RM, cc)
                     }
@@ -335,6 +331,9 @@ fn hp_eval(e: &Expr, cc: &mut Consts) -> Option<(f64, BigFloat)> {
                     x.div(&y, P, RM)
                 }
                 POW => {
+                    if x.is_zero() && !y.is_positive() {
+                        return None; // 0^0 undefined, 0^-n division by zero
+                    }
                     if y.is_int() && yf.abs() <= 1e4 {
                         let n = yf.abs() as usize;
                         let p = x.powi(n, P, RM);
@@ -356,7 +355,7 @@ fn hp_eval(e: &Expr, cc: &mut Consts) -> Option<(f64, BigFloat)> {
                 }
                 MOD => {
                     if y.is_zero() {
-                        x
+                        return None; // undefined
                     } else {
                         let q = x.div(&y, P, RM).floor();
                         x.sub(&y.mul(&q, P, RM), P, RM)

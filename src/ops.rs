@@ -1,11 +1,23 @@
-//! Operator codes and mathjs-faithful numeric semantics.
+//! Operator codes and numeric semantics.
+//!
+//! The arithmetic is real-number mathematics. An operation that is undefined over the
+//! reals returns None: division by zero, `x % 0`, `0^0`, `0` to a negative power, a
+//! negative base with a non-integer exponent, sqrt of a negative, factorial of a
+//! negative, inverse trig outside its domain.
+//!
+//! The game evaluates expressions with mathjs, which is not the source of truth here. It
+//! fixes the notation (precedence, function names) and, for a solution to be playable,
+//! the game must compute the same value. Where mathjs bends the maths (`x % 0 = x`,
+//! `0^0 = 1`, `acot(-0) = -pi/2`, a noise-tolerant floor), we reject the case instead of
+//! copying it.
 //!
 //! Two layers:
-//! * `raw_*`: exactly what mathjs 15 computes (None = mathjs throws, goes complex, or
-//!   produces a non-finite value). Used for re-evaluating final expression trees.
+//! * `raw_*`: f64 evaluation, as the game computes it, restricted to cases that are
+//!   mathematically defined (None otherwise, or when the result is not finite). Used to
+//!   re-evaluate final expression trees next to the 256-bit check in `expr.rs`.
 //! * `bin` / `un`: the search versions. Same arithmetic, plus value filters (magnitude,
-//!   fake zeros) and the EXACT / INT flags that track whether a value is bit-identical
-//!   to what V8 would compute.
+//!   fake zeros) and the EXACT / INT flags that track whether an f64 value is exactly
+//!   the true value (so the game computes it identically).
 
 use std::f64::consts::PI;
 
@@ -61,7 +73,7 @@ pub const FWD_TRIG: [u8; 6] = [SIN, COS, TAN, SEC, CSC, COT];
 pub const INV_TRIG: [u8; 6] = [ASIN, ACOS, ATAN, ASEC, ACSC, ACOT];
 
 // value flags
-pub const EXACT: u8 = 1; // bit-identical to the value V8/mathjs computes
+pub const EXACT: u8 = 1; // the f64 is exactly the true value (no rounding so far)
 pub const INT: u8 = 2; // value is an integer (in f64)
 
 #[inline]
@@ -119,7 +131,7 @@ pub fn name(op: u8) -> &'static str {
     }
 }
 
-/// mathjs precedence class: higher binds tighter.
+/// Precedence class in the game's notation (mathjs parser): higher binds tighter.
 #[inline]
 pub fn prec(op: u8) -> u8 {
     match op {
@@ -176,20 +188,26 @@ pub fn floor_js(x: f64) -> f64 {
     f
 }
 
-/// mathjs `mod` for numbers: floored modulo, `x % 0 = x`.
+/// Floored modulo `x - y * floor(x / y)` (the result takes the divisor's sign).
+/// `x % 0` is undefined (mathjs returns x; we don't). The floor is mathjs's
+/// noise-tolerant one so the f64 value matches the game; where it differs from the
+/// exact floor, the 256-bit check in `expr.rs` rejects the expression.
 #[inline]
-pub fn mod_js(x: f64, y: f64) -> f64 {
+pub fn mod_js(x: f64, y: f64) -> Option<f64> {
     if y == 0.0 {
-        x
+        None
     } else {
-        x - y * floor_js(x / y)
+        Some(x - y * floor_js(x / y))
     }
 }
 
-/// mathjs `pow` for numbers (non-predictable mode). None = Complex result.
+/// Real power. None when undefined over the reals: `0^0`, `0` to a negative power
+/// (non-finite), or a negative base with a non-integer exponent (complex).
 #[inline]
 pub fn pow_js(x: f64, y: f64) -> Option<f64> {
-    if js_is_int(y) || x >= 0.0 {
+    if x == 0.0 && y == 0.0 {
+        None
+    } else if js_is_int(y) || x >= 0.0 {
         Some(libm::pow(x, y))
     } else {
         None
@@ -309,7 +327,7 @@ fn fin(x: f64) -> Option<f64> {
     }
 }
 
-/// Exactly what mathjs computes for a binary operator.
+/// f64 value of a binary operator (None = undefined or not finite).
 pub fn raw_bin(op: u8, a: f64, b: f64) -> Option<f64> {
     match op {
         ADD => fin(a + b),
@@ -317,13 +335,13 @@ pub fn raw_bin(op: u8, a: f64, b: f64) -> Option<f64> {
         MUL => fin(a * b),
         DIV => fin(a / b),
         POW => fin(pow_js(a, b)?),
-        MOD => fin(mod_js(a, b)),
+        MOD => fin(mod_js(a, b)?),
         COMB | PERM => comb_perm(op, a, b),
         _ => None,
     }
 }
 
-/// Exactly what mathjs computes for a unary operator / function.
+/// f64 value of a unary operator / function (None = undefined or not finite).
 pub fn raw_un(op: u8, x: f64) -> Option<f64> {
     let r = match op {
         NEG => -x,
@@ -376,7 +394,14 @@ pub fn raw_un(op: u8, x: f64) -> Option<f64> {
                 return None;
             }
         }
-        ACOT => libm::atan(1.0 / x),
+        ACOT => {
+            // acot(0) = pi/2. A negative zero (e.g. from "-0") would make the game
+            // compute atan(-inf) = -pi/2, which is wrong, so it is rejected.
+            if x == 0.0 && x.is_sign_negative() {
+                return None;
+            }
+            libm::atan(1.0 / x)
+        }
         _ if is_macro(op) => {
             let (outer, inner) = macro_parts(op);
             return raw_un(outer, raw_un(inner, x)?);
@@ -426,7 +451,7 @@ fn finish(r: f64, exact: bool, lim: &Limits) -> Option<(f64, u8)> {
     if r == r.round() {
         f |= INT;
     }
-    // keep the sign of zero: mathjs distinguishes acot(0) from acot(-0)
+    // keep the sign of zero: `raw_un` rejects acot(-0), which the game gets wrong
     Some((r, f))
 }
 
@@ -468,10 +493,10 @@ pub fn bin_div(a: f64, fa: u8, b: f64, fb: u8, lim: &Limits) -> Option<(f64, u8)
 #[inline]
 pub fn bin_pow(a: f64, fa: u8, b: f64, fb: u8, lim: &Limits) -> Option<(f64, u8)> {
     if a < 0.0 && (fb & EXACT == 0 || fb & INT == 0) {
-        return None; // complex in mathjs (or ambiguous integer-ness)
+        return None; // not real (or ambiguous integer-ness)
     }
-    if a == 0.0 && b < 0.0 {
-        return None;
+    if a == 0.0 && b <= 0.0 {
+        return None; // 0^0 is undefined, 0^-n is division by zero
     }
     if b.abs() > 1e4 {
         return None;
@@ -499,7 +524,7 @@ pub fn bin_mod(a: f64, fa: u8, b: f64, fb: u8, lim: &Limits) -> Option<(f64, u8)
     if fa & fb & EXACT == 0 && b != 0.0 && (a / b).abs() > 1e4 {
         return None;
     }
-    let r = mod_js(a, b);
+    let r = mod_js(a, b)?;
     if r != 0.0 && r.abs() <= 1e-12 * a.abs() {
         return None;
     }
@@ -511,7 +536,7 @@ pub fn bin_mod(a: f64, fa: u8, b: f64, fb: u8, lim: &Limits) -> Option<(f64, u8)
 }
 #[inline]
 pub fn bin_comb_perm(op: u8, a: f64, fa: u8, b: f64, fb: u8, lim: &Limits) -> Option<(f64, u8)> {
-    // mathjs requires strict integers, so only trust bit-exact operands
+    // defined for integers 0 <= k <= n only, so only trust bit-exact integer operands
     if fa & fb & EXACT == 0 || fa & fb & INT == 0 {
         return None;
     }
@@ -620,14 +645,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mod_matches_mathjs() {
-        assert_eq!(mod_js(7.0, 3.0), 1.0);
-        assert_eq!(mod_js(-7.0, 3.0), 2.0);
-        assert_eq!(mod_js(7.0, -3.0), -2.0);
-        assert_eq!(mod_js(5.5, 2.0), 1.5);
-        assert_eq!(mod_js(100.0, 0.0), 100.0);
-        assert_eq!(mod_js(720.0, 71.0), 10.0);
-        assert_eq!(mod_js(17.0, -7.0), -4.0);
+    fn floored_mod() {
+        assert_eq!(mod_js(7.0, 3.0), Some(1.0));
+        assert_eq!(mod_js(-7.0, 3.0), Some(2.0));
+        assert_eq!(mod_js(7.0, -3.0), Some(-2.0));
+        assert_eq!(mod_js(5.5, 2.0), Some(1.5));
+        assert_eq!(mod_js(100.0, 0.0), None); // undefined (mathjs says 100)
+        assert_eq!(mod_js(720.0, 71.0), Some(10.0));
+        assert_eq!(mod_js(17.0, -7.0), Some(-4.0));
     }
 
     #[test]
@@ -640,7 +665,9 @@ mod tests {
 
     #[test]
     fn pow_and_roots() {
-        assert_eq!(raw_bin(POW, 0.0, 0.0), Some(1.0));
+        assert_eq!(raw_bin(POW, 0.0, 0.0), None); // undefined (mathjs says 1)
+        assert_eq!(raw_bin(POW, 0.0, 2.0), Some(0.0));
+        assert!(raw_bin(POW, 0.0, -1.0).is_none());
         assert_eq!(raw_bin(POW, 2.0, 10.0), Some(1024.0));
         assert!(raw_bin(POW, -8.0, 1.0 / 3.0).is_none());
         assert_eq!(raw_bin(POW, -2.0, 3.0), Some(-8.0));
@@ -665,6 +692,7 @@ mod tests {
         assert!(raw_un(ASEC, 0.0).is_none());
         assert!(raw_un(ASIN, 1.5).is_none());
         assert_eq!(raw_un(ACOT, 0.0), Some(PI / 2.0));
+        assert!(raw_un(ACOT, -0.0).is_none()); // the game would say -pi/2
         let m = MACRO0; // sec(atan(3)) = sqrt(10)
         assert!((raw_un(m, 3.0).unwrap() - 10f64.sqrt()).abs() < 1e-15);
         assert!(is_pirat(PI / 4.0));

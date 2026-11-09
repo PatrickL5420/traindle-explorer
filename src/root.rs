@@ -84,7 +84,7 @@ impl RootPrep {
 
 /// Best *verified* solution for one number.
 ///
-/// A candidate is verified (f64 mathjs semantics + 256-bit exactness) the moment it
+/// A candidate is verified (f64 value + 256-bit exactness) the moment it
 /// would beat the current best, and only verified scores tighten the bound shared by
 /// all jobs. An unverified bound would be wrong: a cheap candidate that later fails the
 /// exact check (a float artefact) would prune every costlier genuine solution.
@@ -344,8 +344,7 @@ fn join_mod(j: &J, top: &mut Best) {
         let a = l.val[ia];
         let d = a - t;
         if d == 0.0 {
-            probe_right(j, ia, 0.0, top); // a % 0 = a
-            // any b beyond a (same sign) also leaves a unchanged: take the cheapest
+            // a % b = a for any b beyond a with the same sign: take the cheapest
             let lim = r.count_le(top.bound().saturating_sub(l.cost(ia) + base));
             let mut found = 0;
             for ib in 0..lim {

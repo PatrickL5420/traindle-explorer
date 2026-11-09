@@ -1,23 +1,28 @@
 # Traindle Explorer
 
-For every puzzle of n digits (1–5), finds the simplest expression that uses the digits **in order**
-and equals the **target exactly** (default: 4 digits, target 10, i.e. the real game). Operators
-are grouped into **tiers** that are tried in order, and each solution's tier doubles as a
-difficulty rating. Every output is valid under the real game's rules (mathjs 15.2,
-`Waffles-traindle/shared/gameUtils.ts`).
+An exercise in mathematics based on the Traindle game. For every puzzle of n digits (1–5), it
+finds the simplest expression that uses the digits **in order** and is **mathematically equal**
+to the target (default: 4 digits, target 10, as in the game). Operators are grouped into
+**tiers** that are tried in order, and each solution's tier doubles as a difficulty rating.
 
-**Default game:** all 10000 numbers solved in ~35 s on an i7-12700K (20 threads; ~30 s with a
-[native-CPU build](#faster-builds-for-your-own-cpu)), peak memory ~1.3 GB. 5 digits (100,000
-puzzles) takes ~22 s. Every solution is checked in 256-bit precision
-and by mathjs itself.
+Correctness means real-number arithmetic, not whatever a calculator prints. The game's
+evaluator (mathjs 15.2) is not the source of truth: where it bends the maths (`x % 0 = x`,
+`0^0 = 1`, float underflow), those expressions are rejected (see [The maths](#the-maths)). The
+game still sets the puzzle format: digits in order, the allowed functions, and the written
+notation. Every solution is also accepted by the game.
+
+**Default game:** all 10000 numbers solved in ~27 s on an i7-12700K (20 threads; a
+[native-CPU build](#faster-builds-for-your-own-cpu) is ~15% faster), peak memory ~1.3 GB.
+5 digits (100,000 puzzles) takes ~22 s. Every solution is re-evaluated in 256-bit precision and
+cross-checked with the game's evaluator.
 
 | tier | features (default) | 4 digits → 10 |
 |---|---|---|
 | 1 | `+ - * /`, leading unary minus, no brackets | 5354 |
 | 2 | brackets (nested) | 1537 |
-| 3 | `^` | 1028 |
-| 4 | concatenation (joining digits, e.g. `12`) | 364 |
-| 5 | `!` | 1405 |
+| 3 | `^` | 945 |
+| 4 | concatenation (joining digits, e.g. `12`) | 365 |
+| 5 | `!` | 1487 |
 | 6 | `%` (modulo) | 282 |
 | 7 | `sqrt()` | 18 |
 | 8 | `cbrt()` | 1 |
@@ -31,6 +36,45 @@ the expression needs.
 Literal rules: joined digits need the concatenation feature, and a multi-digit literal may not
 start with 0 (`06` is just `0 + 6` in disguise). Each joined digit costs a little (weight
 `concat`, default 4, below every operator).
+
+## The maths
+
+Expressions are evaluated over the real numbers. An operation that is undefined there is never
+used, even where the game's evaluator returns a value:
+
+| expression | here | mathjs (the game) |
+|---|---|---|
+| `x / 0` | undefined | `Infinity` (so `atan(1/0)` "is" π/2) |
+| `x % 0` | undefined | `x` |
+| `0^0` | undefined | `1` |
+| `0^(-n)` | undefined | `Infinity` |
+| `(-8)^(1/3)` | not real | complex |
+| `sqrt(-x)`, `(-n)!`, `asin(2)`, `asec(0.5)` | undefined | complex or error |
+| `acot(-0)` | π/2 (it's `acot(0)`) | −π/2 (signed zero), so rejected |
+
+Conventions where mathematics offers a choice:
+
+- `a % b` is the floored modulo `a − b·⌊a/b⌋`, so the result takes the sign of `b`: `-7 % 3 = 2`.
+- `n!` is defined for non-negative integers. Non-integers via the gamma function are only
+  allowed with `--gamma` (off by default).
+- `combinations(n, k)` and `permutations(n, k)` need integers with 0 ≤ k ≤ n.
+- `cbrt` is the real cube root (`cbrt(-8) = -2`). A negative base needs an integer exponent.
+- Trig works in radians. Inverse functions return principal values, with
+  `asec(x) = acos(1/x)`, `acsc(x) = asin(1/x)` and `acot(x) = atan(1/x)` (values in (−π/2, 0) ∪ (0, π/2]).
+- Notation follows the game: `^` is right-associative and binds tighter than unary minus
+  (`-2^2 = -4`), and `!` binds tighter than `^`.
+
+**Equal means equal.** Floating point can make a false expression look true. For example,
+`9^(-7!)` ≈ 4·10⁻⁴⁸¹⁰ underflows to exactly 0, so `7^9^(-7!) + 9` "equals" 10 in mathjs.
+Such cases are rejected:
+- a product, quotient or power of nonzero numbers is never treated as 0;
+- no sub-expression may be negligibly small (|v| < 10⁻⁹);
+- every candidate is re-evaluated in 256-bit precision (~77 significant digits). At every node
+  the 64-bit and 256-bit values must agree, and the result must match the target exactly at
+  that precision.
+
+That last check is very strong numerical evidence, not a symbolic proof. Identities like
+`sec(atan(√8)) = 3` are confirmed to ~77 digits rather than derived.
 
 ## Building
 
@@ -144,9 +188,11 @@ http://127.0.0.1:7878/. Options: `--port N`, `--runs-dir DIR`, `--no-open`.
   - The thinner bar shows the current round and stage (building value sets / joining).
   - *Cancel* stops a run and keeps its partial results.
 - **Verification:**
-  - Each finished or opened run is checked in the browser, in a Web Worker, with mathjs 15.2.
-  - It uses the game's own validation, exact equality, no leading zeros, and the declared tier must
-    match the tier recomputed from the mathjs parse tree.
+  - Each finished or opened run is checked in the browser, in a Web Worker, against the rules
+    in [The maths](#the-maths): no undefined operations, no float artefacts, exact equality.
+  - It also checks that the game accepts each solution: its input validation, no leading zeros,
+    and the value the game's evaluator (mathjs 15.2) computes. The declared tier must match the
+    tier recomputed from the parse tree.
   - The report is saved with the run.
 - **Runs** are saved under `runs/<id>/` (`config.json`, `solutions.json`, `summary.json`,
   `verify.json`). Pick a run as **A** to view it. Pick a second run with the same digit count as
@@ -193,7 +239,7 @@ working directory it is served from disk instead, so the page can be edited with
 | `--max-tier N` | only use the first N tiers |
 | `--profile default\|thorough` | search budgets; `thorough` takes ~115 s on the default game and currently finds identical solutions |
 | `--concat-cost N` | weight per joined digit |
-| `--gamma` | allow factorial of non-integers (mathjs uses the gamma function) |
+| `--gamma` | allow factorial of non-integers via the gamma function, `x! = Γ(x+1)` |
 | `--trig-rounds N` | trig search depth, 1–3 (default 2). Round 3 (unfiltered inverse trig, biggest budget) is a slow last resort that can take minutes |
 | `--alt-slack N` | rarity window: also keep verified solutions costing at most best + N (default 10, 0 = off) |
 | `--max-abs X` | largest intermediate magnitude (default 1e7) |
@@ -212,23 +258,25 @@ node verify/exprcheck.mjs output/expr_tests.json
 cargo test --release
 ```
 
-- `verify.mjs` and the web UI share `web/verify-core.js`. That file holds verbatim copies of
-  the game's `validExpression` / `hasFourNumbers` / `evaluateExpression`, generalised to n digits
-  and any target, plus the exactness, leading-zero and tier checks. It also rejects float
-  artefacts that mathjs (and so the game) accepts but that aren't true maths:
-  - a zero that is really float underflow, e.g. `9^(-7!)` ≈ 4e-4810, which makes
-    `7^9^(-7!) + 9` "equal" 10;
-  - any negligible nonzero sub-expression (|v| < 1e-9).
-
-  Every `^` sub-expression is cross-checked with 64-digit BigNumbers.
-- `exprcheck.mjs` fuzzes random Rust-rendered expressions against mathjs, checking both rendering
-  (precedence/parens) and numeric semantics.
+- `verify.mjs` and the web UI share `web/verify-core.js`. It checks two things independently
+  of the solver:
+  - **The maths:** no operation that is undefined over the reals (`x % 0`, `0^0`, division by
+    zero, `acot(-0)`), no float artefacts (underflow "zeros", negligible values; every `^` is
+    re-checked with 64-digit BigNumbers), and exact equality with the target.
+  - **The game:** verbatim copies of the game's `validExpression` / `hasFourNumbers` /
+    `evaluateExpression` (generalised to n digits and any target), no leading zeros, and the
+    tier recomputed from the parse tree.
+- `exprcheck.mjs` fuzzes random Rust-rendered expressions against mathjs. It checks that the game
+  reads our notation the same way (precedence/parens) and computes the same 64-bit value. Rust
+  rejecting something mathjs accepts (e.g. `x % 0`) is expected. Rare differences of ~1e-11
+  can appear where both sides round differently on long inexact chains (e.g. `sin` inside a
+  `%`). Neither value is the exact one, and solutions are protected by the 256-bit check.
 
 ## How it works
 
 1. **Flat tiers** (`flat.rs`). Every tier before brackets is enumerated directly: concatenation
-   splits × operator choices × an optional leading minus. Evaluation uses mathjs precedence (`^`
-   right-associative, then `* / %`, then `+ -`).
+   splits × operator choices × an optional leading minus. Evaluation follows the game's
+   precedence (`^` right-associative, then `* / %`, then `+ -`).
 2. **Cross-number memoisation** (`cache.rs`). A substring's set of reachable values depends only
    on its digits, so each round builds at most 10 + 100 + … + 10^(n−1) sets, shared read-only by
    all puzzles. Only substrings that still-unsolved puzzles need are built.
@@ -253,9 +301,9 @@ cargo test --release
    puzzles, where tiny substrings would otherwise explode.
 7. **Exactness.** The search never accepts a zero produced by underflow: a power, product or
    quotient of nonzero values is never 0, and powers outside [1e-9, max] are skipped up front.
-   A candidate is verified the moment it would become a puzzle's best: it is re-evaluated with
-   mathjs semantics in f64, then in 256-bit precision (`astro-float`). Every node must agree
-   between the two, and the result must match the exact decimal target. Only verified
+   A candidate is verified the moment it would become a puzzle's best: it is re-evaluated in
+   f64 (the game's arithmetic) and in 256-bit precision (`astro-float`, the mathematical value).
+   Every node must agree between the two, and the result must match the exact decimal target. Only verified
    candidates tighten the pruning bound, so a cheap fake can never hide a genuine solution.
 
 **Why CPU, not GPU:** the work is hash inserts and lookups plus branchy f64 domain checks, not
@@ -267,7 +315,7 @@ the last ~12 puzzles.
 
 ```
 src/config.rs     features, tier list, weights, round schedule
-src/ops.rs        operator codes; mathjs-faithful semantics (floored %, x%0=x, gamma, domains)
+src/ops.rs        operator codes; real arithmetic and domains (floored %, undefined x%0, 0^0)
 src/flat.rs       bracket-free tiers (enumeration with precedence)
 src/span.rs       value-set builder (combine, unary closure, freeze)
 src/cache.rs      substring memoisation, parallel level builds
@@ -279,5 +327,5 @@ src/progress.rs   live progress + cancellation (shared with the server)
 src/runs.rs       run ids, summary, saving
 src/server.rs     `serve`: local web UI + JSON API
 web/              index.html (UI), verify-core.js (shared checks), verify-worker.js
-verify/           Node checks against mathjs 15.2
+verify/           Node checks: the maths, and acceptance by the game (mathjs 15.2)
 ```

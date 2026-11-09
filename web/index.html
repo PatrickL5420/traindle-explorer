@@ -340,7 +340,7 @@ table.chg tbody tr:hover td { background: var(--surface-2); }
         <div class="plabel"><span id="stageName">Round</span><span id="stageLabel">–</span></div>
         <div class="bar thin" id="stageBar"><i></i></div>
       </div>
-      <div class="prog" title="Checked in your browser with mathjs 15.2 (the game's evaluator)">
+      <div class="prog" title="Checked in your browser: mathematically exact (no undefined operations or float artefacts), and accepted by the game's evaluator (mathjs 15.2)">
         <div class="plabel"><span>Verifying</span><span id="verLabel">–</span></div>
         <div class="bar" id="verBar"><i></i></div>
       </div>
@@ -879,7 +879,7 @@ function verifyRunCb(run, quiet, resolve) {
       const r = m.report;
       setBar("verBar", 1, r.ok ? "ok" : "bad");
       $("verState").innerHTML = r.ok
-        ? `<span class="ok" title="All solutions${r.alts_checked ? ` and ${fmtInt(r.alts_checked)} alternatives` : ""} pass the game's rules and equal ${esc(cfg.target)} exactly (mathjs ${esc(r.mathjs_version)}, ${fmtTime(r.elapsed_ms / 1000)})">✓ ${esc(tag)}${fmtInt(r.checked)} valid</span>`
+        ? `<span class="ok" title="All solutions${r.alts_checked ? ` and ${fmtInt(r.alts_checked)} alternatives` : ""} equal ${esc(cfg.target)} exactly and are accepted by the game (checked against mathjs ${esc(r.mathjs_version)} in ${fmtTime(r.elapsed_ms / 1000)})">✓ ${esc(tag)}${fmtInt(r.checked)} valid</span>`
         : `<span class="bad">✗ ${esc(tag)}${fmtInt(r.failure_count)} failed.</span>`;
       $("verFails").innerHTML = r.failures.slice(0, 50).map((f) => `<div><b class="mono">${esc(f.number)}</b>${f.alt ? ' <span class="hint">alt</span>' : ""} <span class="mono">${esc(f.solution)}</span><br>${esc(f.errors.join("; "))}</div>`).join("");
       try { await api(`/api/runs/${run.summary.id}/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(r) }); } catch {}
@@ -942,7 +942,7 @@ function renderRuns() {
     body += sweepRow(sid, rs);
     if (S.openSweeps.has(sid)) body += rs.map((x) => runRow(x, true)).join("");
   }
-  t.innerHTML = `<thead><tr><th title="View this run">A</th><th title="Compare A with this run">B${b ? ` <button class="icon" id="clearB" title="Stop comparing" aria-label="Stop comparing"><svg class="ic"><use href="#i-x"/></svg></button>` : ""}</th><th>Run</th><th>Digits</th><th>Target</th><th>Solved</th><th>Tiers</th><th>Time</th><th title="Checked with mathjs">Verified</th><th></th></tr></thead><tbody>${body}</tbody>`;
+  t.innerHTML = `<thead><tr><th title="View this run">A</th><th title="Compare A with this run">B${b ? ` <button class="icon" id="clearB" title="Stop comparing" aria-label="Stop comparing"><svg class="ic"><use href="#i-x"/></svg></button>` : ""}</th><th>Run</th><th>Digits</th><th>Target</th><th>Solved</th><th>Tiers</th><th>Time</th><th title="Mathematically exact and accepted by the game">Verified</th><th></th></tr></thead><tbody>${body}</tbody>`;
   t.querySelectorAll("tbody tr[data-id]").forEach((tr) => {
     const id = tr.dataset.id;
     tr.querySelector('input[name=runA]').onchange = () => selectRun("A", id);
@@ -1138,7 +1138,7 @@ function renderView() {
     ? `${s.name || s.id}  vs  ${S.B.summary.name || S.B.summary.id}`
     : (s.name || s.id);
   const meta = [`${s.digits} digit${s.digits > 1 ? "s" : ""} → ${esc(s.target)}`, `${fmtInt(s.solved)} / ${fmtInt(s.total)}`, fmtTime(s.elapsed_s)];
-  if (A.verify) meta.push(A.verify.ok ? `<span class="ok" title="All solutions verified with mathjs">✓ verified</span>` : `<span class="bad">${fmtInt(A.verify.failure_count)} failed verification</span>`);
+  if (A.verify) meta.push(A.verify.ok ? `<span class="ok" title="All solutions are mathematically exact and accepted by the game">✓ verified</span>` : `<span class="bad">${fmtInt(A.verify.failure_count)} failed verification</span>`);
   if (S.B && !cmp) meta.push(`<span title="Runs can only be compared with the same digit count">can't compare</span>`);
   if (cmp) meta.unshift(compareStats());
   $("viewMeta").innerHTML = meta.join(`<span style="color:var(--muted)">·</span>`);

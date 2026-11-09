@@ -1,12 +1,13 @@
-// Cross-check the Rust renderer + numeric semantics against mathjs.
+// Cross-check the Rust renderer + f64 arithmetic against mathjs, the game's evaluator.
 //
 //   traindle-explorer --emit-expr-tests 20000      (writes output/expr_tests.json)
 //   node verify/exprcheck.mjs output/expr_tests.json
 //
-// Every random expression was rendered and evaluated by Rust. mathjs must parse it to
-// the same value. A mismatch means a rendering (precedence/parens) or semantics bug.
-// Rust is allowed to be stricter (reject something mathjs accepts, e.g. an infinite
-// intermediate), but never more permissive.
+// Every random expression was rendered and evaluated by Rust. Where Rust gives a value,
+// mathjs must parse the text to the same value, or the game would disagree with us: a
+// mismatch is a rendering (precedence/parens) or arithmetic bug. Rust rejects more than
+// mathjs (operations undefined in real arithmetic such as x % 0 or 0^0, infinite
+// intermediates); that is expected, never the other way round.
 
 import { evaluate } from "mathjs";
 import fs from "node:fs";

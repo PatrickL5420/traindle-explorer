@@ -1,13 +1,15 @@
-// Verify solver output against the real Traindle game rules (mathjs 15.2).
+// Verify solver output: every solution must be mathematically true and accepted by the
+// real Traindle game (which evaluates with mathjs 15.2).
 //
 //   node verify/verify.mjs output/solutions.json [--summary output/summary.json] [--ref ref_solutions.json]
 //   node verify/verify.mjs runs/<id>/solutions.json
 //
 // Uses the same checks as the web UI (web/verify-core.js): the game's validExpression /
 // hasFourNumbers / evaluateExpression (generalised to n digits and any target), exact
-// equality, no float artefacts (underflow to 0, negligible values: checked against 64-digit
+// equality, no operation that is undefined in real arithmetic even where mathjs returns a
+// value (x % 0, 0^0, division by zero, acot(-0)), no float artefacts (underflow to 0, negligible values: checked against 64-digit
 // BigNumbers), no leading-zero literals, and the declared tier must match the tier derived
-// from the expression's mathjs parse tree under the run's tier config. The config comes
+// from the expression's parse tree under the run's tier config. The config comes
 // from the summary.json next to the solutions file. Exits non-zero on any failure.
 
 import { create, all } from "mathjs";
@@ -89,4 +91,4 @@ if (!report.ok) {
   for (const f of report.failures.slice(0, 50)) console.log(`  ${f.number}${f.alt ? " (alt)" : ""}: ${f.solution}\n      ${f.errors.join("; ")}`);
   process.exit(1);
 }
-console.log(`\nall ${report.checked} solutions valid under the game rules and exactly equal to ${cfg.target}`);
+console.log(`\nall ${report.checked} solutions mathematically exact (= ${cfg.target}) and accepted by the game`);

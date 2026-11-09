@@ -1,8 +1,18 @@
 // Shared verification logic: runs in the browser (Web Worker / page) and in Node
 // (verify/verify.mjs). Pass in the mathjs instance; nothing here imports it.
 //
-// The game's own checks (Waffles-traindle/shared/gameUtils.ts) are copied verbatim and
-// generalised from "4 digits, equals 10" to "n digits, equals target".
+// Two questions are checked for every solution:
+// 1. Is it mathematically true? It must use only operations defined over the reals
+//    (no x % 0, 0^0, division by zero, ...) and equal the target exactly. Float
+//    artefacts don't count: an underflow "zero" or a negligible value is rejected, and
+//    powers are re-checked with 64-digit BigNumbers.
+// 2. Does the game accept it? The game parses and evaluates with mathjs, so mathjs
+//    is used for the notation (parse tree, features, tiers) and to confirm the game
+//    computes the target. mathjs is not the judge of correctness: where it bends the
+//    maths (x % 0 = x, 0^0 = 1, acot(-0) = -pi/2, atan(1/0) = pi/2) we reject.
+//
+// The game's own input checks (Waffles-traindle/shared/gameUtils.ts) are copied verbatim
+// and generalised from "4 digits, equals 10" to "n digits, equals target".
 (function (root) {
   "use strict";
 
@@ -75,11 +85,16 @@
   const NEGLIGIBLE = 1e-9;
 
   /**
-   * Float artefacts the final value can't reveal. mathjs evaluates in 64-bit floats, so
-   * 9^(-7!) (really 4e-4810) underflows to exactly 0 and 7^9^(-7!) + 9 "equals" 10.
-   * Rules, matching the solver: no sub-expression may be a negligible nonzero value
-   * (|v| < 1e-9); a zero product / quotient / power of nonzero operands is underflow; and
-   * every ^ sub-expression is re-evaluated with 64-digit BigNumbers (`big`, optional).
+   * Why an expression is not mathematically valid, even if mathjs evaluates it.
+   * - Undefined operations mathjs gives a value anyway: x % 0 (mathjs: x), 0^0
+   *   (mathjs: 1), anything divided by 0 or another non-finite intermediate (mathjs:
+   *   Infinity, so atan(1/0) "is" pi/2), and acot of a negative zero (mathjs: -pi/2).
+   * - Float artefacts the final value can't reveal. mathjs evaluates in 64-bit floats,
+   *   so 9^(-7!) (really 4e-4810) underflows to exactly 0 and 7^9^(-7!) + 9 "equals" 10.
+   *   No sub-expression may be a negligible nonzero value (|v| < 1e-9); a zero product /
+   *   quotient / power of nonzero operands is underflow; and every ^ sub-expression is
+   *   re-evaluated with 64-digit BigNumbers (`big`, optional).
+   * The Rust solver applies the same rules.
    */
   function numericIssues(tree, big) {
     const issues = [];
@@ -87,19 +102,25 @@
       if (issues.length >= 2 || (n.type !== "OperatorNode" && n.type !== "FunctionNode")) return;
       let v;
       try { v = n.evaluate(); } catch { return; }
-      if (typeof v !== "number" || !Number.isFinite(v)) return;
+      if (typeof v !== "number") return;
       const txt = n.toString();
+      let args = [];
+      try { args = n.args.map((a) => a.evaluate()); } catch { return; }
+      const op = n.type === "OperatorNode" ? n.fn : n.fn.name;
+      if (op === "mod" && args[1] === 0) { issues.push(`${txt}: x % 0 is undefined (mathjs returns x)`); return; }
+      if (op === "pow" && args[0] === 0 && args[1] <= 0) { issues.push(`${txt}: 0^${args[1] === 0 ? "0" : "(negative)"} is undefined${args[1] === 0 ? " (mathjs returns 1)" : ""}`); return; }
+      if (op === "acot" && Object.is(args[0], -0)) { issues.push(`${txt}: acot of a negative zero (mathjs returns -pi/2; acot(0) = pi/2)`); return; }
+      if (args.some((a) => typeof a === "number" && !Number.isFinite(a))) { issues.push(`${txt} uses an undefined or infinite value (e.g. division by 0)`); return; }
+      if (!Number.isFinite(v)) return;
       if (v !== 0 && Math.abs(v) < NEGLIGIBLE) {
         issues.push(`${txt} is a negligible ${v.toExponential(2)}, used as if it were 0`);
         return;
       }
       if (v === 0 && n.type === "OperatorNode" && ["multiply", "divide", "pow"].includes(n.fn)) {
-        let args;
-        try { args = n.args.map((a) => a.evaluate()); } catch { return; }
         const nonzero = n.fn === "multiply" ? args.every((x) => x !== 0) : args[0] !== 0;
         if (nonzero) {
           let real = "";
-          if (big) try { real = `; its real value is ${big.evaluate(txt).toExponential(3)}`; } catch {}
+          if (big) try { const r = big.evaluate(txt); if (!r.isZero()) real = `; its real value is ${r.toExponential(3)}`; } catch {}
           issues.push(`${txt} underflows to 0 in floating point${real}`);
           return;
         }

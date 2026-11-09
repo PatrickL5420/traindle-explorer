@@ -4,7 +4,8 @@
 //! working directory overrides it, for editing without rebuilding), runs one solve
 //! job at a time on a background thread, and stores every run under `runs/<id>/`.
 //! The page polls `/api/status` for progress. Verification runs in the browser with
-//! mathjs and posts its report back to `/api/runs/<id>/verify`.
+//! the shared checks (web/verify-core.js, using mathjs as the game's evaluator) and posts
+//! its report back to `/api/runs/<id>/verify`.
 
 use crate::config::{SolverConfig, ALL_FEATURES};
 use crate::driver::{all_numbers, run};

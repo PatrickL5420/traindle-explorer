@@ -2,7 +2,7 @@
 //!
 //! A flat expression is `[-]x1 op x2 op ... xk` where the x's are the digits (or
 //! concatenated groups) and the ops are the round's binary operators among
-//! + - * / ^ %. It is evaluated with mathjs precedence: `^` right-associative first,
+//! + - * / ^ %. It is evaluated with the game's precedence: `^` right-associative first,
 //! a leading minus applies to the first power tower (`-2^2 = -4`), then * / %
 //! left-to-right, then + - left-to-right. Evaluation is numeric; an expression tree is
 //! only built for candidates that beat the current best.
@@ -20,7 +20,7 @@ fn is_mul_level(op: u8) -> bool {
     matches!(op, MUL | DIV | MOD)
 }
 
-/// Value of a flat expression (None = invalid in mathjs or non-finite).
+/// Value of a flat expression (None = undefined or non-finite).
 fn eval_flat(v: &[f64], o: &[u8], neg: bool) -> Option<f64> {
     let k = v.len();
     let mut factors = [0f64; MAXD];
