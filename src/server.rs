@@ -11,6 +11,7 @@ use crate::config::{SolverConfig, ALL_FEATURES};
 use crate::driver::{all_numbers, run};
 use crate::progress::Progress;
 use crate::runs::{build_outputs, new_run_id, now_stamp, save_run, slug, valid_id, write_json, SweepInfo};
+use crate::store;
 use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -53,55 +54,47 @@ struct Job {
 struct App {
     runs_dir: PathBuf,
     job: Mutex<Option<Arc<Job>>>,
-    /// per run: (puzzle number, byte offset) of each line of its alternatives file
-    alt_index: Mutex<Vec<(String, Arc<AltIndex>)>>,
+    /// per run: every puzzle's solution text (None = unsolved), for on-demand lookups
+    sol_cache: Mutex<Vec<(String, Arc<Vec<Option<String>>>)>>,
 }
 
-struct AltIndex {
-    path: PathBuf,
-    lines: Vec<(u32, u64)>,
+fn run_digits(dir: &Path) -> std::io::Result<usize> {
+    let summary: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("summary.json"))?).map_err(std::io::Error::other)?;
+    Ok(summary["digits"].as_u64().unwrap_or(4) as usize)
 }
 
-/// Index a `solutions.alts.jsonl` file: the puzzle number and offset of every line.
-fn index_alts(path: &Path) -> std::io::Result<AltIndex> {
-    let bytes = std::fs::read(path)?;
-    let mut lines = Vec::new();
-    let mut start = 0usize;
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'\n' {
-            // a line starts with ["<digits>"
-            let num: u32 = bytes[start..i].iter().skip(2).take_while(|c| c.is_ascii_digit()).fold(0, |a, &c| a * 10 + (c - b'0') as u32);
-            lines.push((num, start as u64));
-            start = i + 1;
-        }
-    }
-    Ok(AltIndex { path: path.to_path_buf(), lines })
-}
-
-/// The alternatives of one puzzle as a JSON array of [cost, expression] ("[]" if none).
-fn alts_for(app: &App, id: &str, number: &str) -> std::io::Result<String> {
-    use std::io::{BufRead, Seek, SeekFrom};
-    let path = crate::runs::alts_path(&app.runs_dir.join(id).join("solutions.json"));
-    let idx = {
-        let mut cache = app.alt_index.lock().unwrap();
+/// Solution texts of the given puzzle indices (JSON array, null = unsolved).
+fn sols_for(app: &App, id: &str, idx: &[usize]) -> std::io::Result<String> {
+    let texts = {
+        let mut cache = app.sol_cache.lock().unwrap();
         match cache.iter().find(|(k, _)| k == id) {
-            Some((_, ix)) => ix.clone(),
+            Some((_, t)) => t.clone(),
             None => {
-                let ix = Arc::new(index_alts(&path)?);
-                cache.insert(0, (id.to_string(), ix.clone()));
-                cache.truncate(4); // a few recent runs (A, B, ...)
-                ix
+                let t = Arc::new(store::read_texts(&app.runs_dir.join(id))?);
+                cache.insert(0, (id.to_string(), t.clone()));
+                cache.truncate(3); // a few recent runs (A, B, ...)
+                t
             }
         }
     };
-    let n: u32 = number.parse().map_err(|_| std::io::Error::other("bad number"))?;
-    let Ok(k) = idx.lines.binary_search_by_key(&n, |l| l.0) else { return Ok("[]".into()) };
-    let mut f = std::io::BufReader::new(std::fs::File::open(&idx.path)?);
-    f.seek(SeekFrom::Start(idx.lines[k].1))?;
-    let mut line = String::new();
-    f.read_line(&mut line)?;
-    let v: Value = serde_json::from_str(line.trim()).map_err(std::io::Error::other)?;
-    Ok(v[1].to_string())
+    let out: Vec<Option<&str>> = idx.iter().map(|&i| texts.get(i).and_then(|s| s.as_deref())).collect();
+    Ok(serde_json::to_string(&out)?)
+}
+
+/// Convert runs saved in older layouts (see `store::upgrade`).
+fn upgrade_runs(runs_dir: &Path) {
+    let Ok(rd) = std::fs::read_dir(runs_dir) else { return };
+    let mut n = 0;
+    for e in rd.flatten() {
+        match store::upgrade(&e.path()) {
+            Ok(true) => n += 1,
+            Ok(false) => {}
+            Err(err) => eprintln!("could not convert {}: {err}", e.path().display()),
+        }
+    }
+    if n > 0 {
+        eprintln!("converted {n} saved run(s) to the compact format");
+    }
 }
 
 fn header(k: &str, v: &str) -> Header {
@@ -132,7 +125,8 @@ pub fn serve(port: u16, runs_dir: PathBuf, open: bool) -> std::io::Result<()> {
     if open {
         open_browser(&url);
     }
-    let app = Arc::new(App { runs_dir, job: Mutex::new(None), alt_index: Mutex::new(Vec::new()) });
+    upgrade_runs(&runs_dir);
+    let app = Arc::new(App { runs_dir, job: Mutex::new(None), sol_cache: Mutex::new(Vec::new()) });
     for req in server.incoming_requests() {
         let app = app.clone();
         // requests are cheap; one thread each keeps a slow file read from blocking polls
@@ -156,6 +150,7 @@ fn open_browser(url: &str) {
 fn handle(app: &App, mut req: Request) {
     let method = req.method().clone();
     let url = req.url().split('?').next().unwrap_or("/").to_string();
+    let query = req.url().split_once('?').map(|q| q.1.to_string()).unwrap_or_default();
     let mut body = String::new();
     if method == Method::Post {
         let _ = req.as_reader().take(64 << 20).read_to_string(&mut body);
@@ -188,12 +183,47 @@ fn handle(app: &App, mut req: Request) {
             req.respond(json_resp(&json!({ "ok": true }), 200))
         }
         (Method::Get, ["api", "runs"]) => req.respond(json_resp(&list_runs(&app.runs_dir), 200)),
+        (Method::Get, ["api", "runs", id, "grid"]) => {
+            let r = if !valid_id(id) {
+                err("not found", 404)
+            } else {
+                match std::fs::read(app.runs_dir.join(id).join("grid.bin")) {
+                    Ok(b) => Response::from_data(b)
+                        .with_header(header("Content-Type", "application/octet-stream"))
+                        .with_header(header("Cache-Control", "no-store")),
+                    Err(_) => err("not found", 404),
+                }
+            };
+            req.respond(r)
+        }
+        // solution texts on demand: /api/runs/<id>/sols?n=12,345,6789 (puzzle indices)
+        (Method::Get, ["api", "runs", id, "sols"]) => {
+            let idx: Vec<usize> = query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("n="))
+                .unwrap_or("")
+                .split(',')
+                .filter_map(|s| s.parse().ok())
+                .take(2000)
+                .collect();
+            let r = if !valid_id(id) {
+                err("not found", 404)
+            } else {
+                match sols_for(app, id, &idx) {
+                    Ok(s) => Response::from_string(s)
+                        .with_header(header("Content-Type", "application/json"))
+                        .with_header(header("Cache-Control", "no-store")),
+                    Err(_) => err("not found", 404),
+                }
+            };
+            req.respond(r)
+        }
         (Method::Get, ["api", "runs", id, "alts", number]) => {
             let ok = valid_id(id) && !number.is_empty() && number.len() <= 6 && number.bytes().all(|c| c.is_ascii_digit());
             let r = if !ok {
                 err("not found", 404)
             } else {
-                match alts_for(app, id, number) {
+                match store::read_alts(&app.runs_dir.join(id), number.parse().unwrap_or(usize::MAX)) {
                     Ok(s) => Response::from_string(s)
                         .with_header(header("Content-Type", "application/json"))
                         .with_header(header("Cache-Control", "no-store")),
@@ -202,8 +232,22 @@ fn handle(app: &App, mut req: Request) {
             };
             req.respond(r)
         }
+        (Method::Get, ["api", "runs", id, "solutions.json"]) => {
+            let dir = app.runs_dir.join(id);
+            let r = if !valid_id(id) {
+                err("not found", 404)
+            } else {
+                match run_digits(&dir).and_then(|d| store::game_json(&dir, d)) {
+                    Ok(s) => Response::from_string(s)
+                        .with_header(header("Content-Type", "application/json"))
+                        .with_header(header("Cache-Control", "no-store")),
+                    Err(_) => err("not found", 404),
+                }
+            };
+            req.respond(r)
+        }
         (Method::Get, ["api", "runs", id, file]) => {
-            let allowed = ["config.json", "solutions.json", "summary.json", "verify.json"];
+            let allowed = ["config.json", "summary.json", "verify.json", "solutions.txt"];
             if !valid_id(id) || !allowed.contains(file) {
                 req.respond(err("not found", 404))
             } else {
@@ -358,8 +402,8 @@ fn start_job(app: &App, body: &str, sweep: bool) -> Response<std::io::Cursor<Vec
             let res = run(&numbers, cfg, &job.progress, false);
             let elapsed = t0.elapsed().as_secs_f64();
             let info = job.sweep.as_ref().map(|(sid, n)| SweepInfo { id: sid.clone(), name: job.name.clone(), index: i, count: *n });
-            let (entries, summary) = build_outputs(&id, &numbers, cfg, &res, elapsed, info);
-            match save_run(&runs_dir.join(&id), &entries, &summary, &numbers, &res) {
+            let (_, summary) = build_outputs(&id, &numbers, cfg, &res, elapsed, info);
+            match save_run(&runs_dir.join(&id), &summary, &numbers, &res) {
                 Ok(_) if res.cancelled => state = ("cancelled".to_string(), None),
                 Ok(_) => {}
                 Err(e) => {

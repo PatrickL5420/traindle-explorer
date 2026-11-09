@@ -73,17 +73,25 @@ takes about half a minute, but needs ~3.5 GB.
 ## Command line
 
 ```bash
-./target/release/traindle-explorer                         # default game -> output/solutions.json
+./target/release/traindle-explorer                         # default game -> output/
 ./target/release/traindle-explorer --digits 3 --target 24
-./target/release/traindle-explorer --only 0000,0677 --stats
+./target/release/traindle-explorer --json game.json        # also export [{number, solution, tier, ...}]
 ./target/release/traindle-explorer --help                  # all options
 ```
 
-To check a results file independently (needs [Node.js](https://nodejs.org) 18+):
+Results are saved as a folder (the same as each saved run in `runs/`):
+- `solutions.txt` holds one solution per line, in puzzle order.
+- `alts.bin` holds the alternatives, compressed.
+- `grid.bin` holds each puzzle's tier, cost and rarity.
+- `summary.json` holds the settings and stats.
+
+In the explorer, the download button gives the usual JSON.
+
+To check results independently (needs [Node.js](https://nodejs.org) 18+):
 
 ```bash
 cd verify && npm install && cd ..
-node verify/verify.mjs output/solutions.json
+node verify/verify.mjs output            # or runs/<id>; --skip-alts to check only the best solutions
 ```
 
 ## How it works

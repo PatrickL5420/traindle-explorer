@@ -19,6 +19,7 @@ mod root;
 mod runs;
 mod server;
 mod span;
+mod store;
 
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use config::{Profile, SolverConfig};
@@ -57,12 +58,12 @@ enum Cmd {
 
 #[derive(ClapArgs, Debug)]
 struct SolveArgs {
-    /// Output solutions JSON
-    #[arg(long, default_value = "output/solutions.json")]
+    /// Output folder (same layout as a saved run: solutions.txt, grid.bin, alts.bin, summary.json)
+    #[arg(long, default_value = "output")]
     out: PathBuf,
-    /// Output summary JSON (includes the config, for verify/verify.mjs)
-    #[arg(long, default_value = "output/summary.json")]
-    summary: PathBuf,
+    /// Also export the solutions as game-format JSON ([{number, solution, tier, cost, count}])
+    #[arg(long)]
+    json: Option<PathBuf>,
     /// Solver config JSON (as saved in runs/<id>/config.json); flags below override it
     #[arg(long)]
     config: Option<PathBuf>,
@@ -195,9 +196,10 @@ fn solve(args: SolveArgs) -> std::io::Result<()> {
             }
         }
     }
-    runs::write_json(&args.out, &entries, false)?;
-    runs::write_alts(&runs::alts_path(&args.out), &numbers, &res)?;
-    runs::write_json(&args.summary, &summary, true)?;
+    runs::save_run(&args.out, &summary, &numbers, &res)?;
+    if let Some(path) = &args.json {
+        runs::write_json(path, &entries, false)?;
+    }
 
     eprintln!("\nsolved {}/{} in {:.2} s", summary.solved, summary.total, elapsed);
     for (i, (name, n)) in summary.tier_names.iter().zip(&summary.tier_counts).enumerate() {
@@ -207,6 +209,6 @@ fn solve(args: SolveArgs) -> std::io::Result<()> {
         let shown: Vec<&str> = summary.unsolved.iter().take(40).map(|s| s.as_str()).collect();
         eprintln!("unsolved ({}): {}{}", summary.unsolved_count, shown.join(" "), if summary.unsolved_count > 40 { " ..." } else { "" });
     }
-    eprintln!("wrote {} and {}", args.out.display(), args.summary.display());
+    eprintln!("wrote {}{}", args.out.display(), args.json.as_ref().map_or(String::new(), |p| format!(" and {}", p.display())));
     Ok(())
 }

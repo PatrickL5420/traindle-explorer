@@ -4,7 +4,7 @@
 use crate::config::SolverConfig;
 use crate::driver::{RoundStat, RunResult};
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize)]
@@ -15,29 +15,6 @@ pub struct Entry {
     pub cost: u32,
     /// rarity: distinct verified solutions within `alt_slack` of the best
     pub count: u16,
-}
-
-/// Alternatives live next to the solutions file (`solutions.json` ->
-/// `solutions.alts.jsonl`): too many to load up front for big runs, so the web UI fetches
-/// one puzzle's line at a time. One line per puzzle that has alternatives, in puzzle
-/// order: `["0123",[[cost,"expr"],...]]`.
-pub fn alts_path(solutions: &Path) -> PathBuf {
-    let stem = solutions.file_stem().and_then(|s| s.to_str()).unwrap_or("solutions");
-    solutions.with_file_name(format!("{stem}.alts.jsonl"))
-}
-
-pub fn write_alts(path: &Path, numbers: &[Vec<u8>], res: &RunResult) -> std::io::Result<()> {
-    use std::io::Write;
-    let mut w = std::io::BufWriter::new(std::fs::File::create(path)?);
-    for (n, s) in numbers.iter().zip(&res.solutions) {
-        let Some(s) = s else { continue };
-        if s.alts.is_empty() {
-            continue;
-        }
-        let num = std::str::from_utf8(n).unwrap();
-        writeln!(w, "{}", serde_json::to_string(&(num, &s.alts))?)?;
-    }
-    w.flush()
 }
 
 #[derive(Serialize)]
@@ -173,13 +150,55 @@ pub fn build_outputs(
     (entries, summary)
 }
 
-/// Write `config.json`, `solutions.json` (compact: it can hold a million puzzles),
-/// `solutions.alts.jsonl` and `summary.json` into `dir`.
-pub fn save_run(dir: &PathBuf, entries: &[Entry], summary: &Summary, numbers: &[Vec<u8>], res: &RunResult) -> std::io::Result<()> {
-    std::fs::create_dir_all(dir)?;
-    write_json(&dir.join("config.json"), &summary.config, true)?;
-    let sols = dir.join("solutions.json");
-    write_json(&sols, &entries, false)?;
-    write_alts(&alts_path(&sols), numbers, res)?;
-    write_json(&dir.join("summary.json"), summary, true)
+/// Per-puzzle numbers for the web UI in one compact binary file, so a million-puzzle
+/// heatmap loads in well under a second (the solution texts are fetched on demand).
+///
+/// Layout (little-endian): `b"TXG1"`, u32 puzzle count n, u32 flags (bit 0 = cost and
+/// count recorded), u32 reserved, then u8 tier[n] (0 = unsolved), u8 length[n]
+/// (solution length in characters, capped at 255), u16 cost[n], u16 count[n].
+pub fn grid_bytes(digits: usize, rows: impl Iterator<Item = (usize, u8, usize, Option<u32>, Option<u16>)>) -> Vec<u8> {
+    let n = 10usize.pow(digits as u32);
+    let (mut tier, mut len, mut cost, mut count) = (vec![0u8; n], vec![0u8; n], vec![0u16; n], vec![0u16; n]);
+    let mut recorded = true;
+    for (i, t, l, c, k) in rows {
+        if i >= n {
+            continue;
+        }
+        tier[i] = t;
+        len[i] = l.min(255) as u8;
+        recorded &= c.is_some() && k.is_some();
+        cost[i] = c.unwrap_or(0).min(65535) as u16;
+        count[i] = k.unwrap_or(0);
+    }
+    let mut out = Vec::with_capacity(16 + 6 * n);
+    out.extend_from_slice(b"TXG1");
+    out.extend_from_slice(&(n as u32).to_le_bytes());
+    out.extend_from_slice(&(recorded as u32).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&tier);
+    out.extend_from_slice(&len);
+    cost.iter().for_each(|v| out.extend_from_slice(&v.to_le_bytes()));
+    count.iter().for_each(|v| out.extend_from_slice(&v.to_le_bytes()));
+    out
+}
+
+
+/// Save a finished run into `dir` (layout: see `store.rs`).
+pub fn save_run(dir: &Path, summary: &Summary, numbers: &[Vec<u8>], res: &RunResult) -> std::io::Result<()> {
+    let puzzles: Vec<crate::store::Stored> = numbers
+        .iter()
+        .zip(&res.solutions)
+        .filter_map(|(n, s)| {
+            let s = s.as_ref()?;
+            Some(crate::store::Stored {
+                index: std::str::from_utf8(n).ok()?.parse().ok()?,
+                solution: &s.expr,
+                tier: s.tier,
+                cost: Some(s.cost),
+                count: Some(s.count),
+                alts: s.alts.iter().map(|(c, e)| (Some(*c), e.as_str())).collect(),
+            })
+        })
+        .collect();
+    crate::store::write_run(dir, summary, summary.digits, &puzzles)
 }

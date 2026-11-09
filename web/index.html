@@ -366,6 +366,9 @@ table.chg tbody tr:hover td { background: var(--surface-2); }
       <div class="viewhead">
         <h2 id="viewTitle" style="margin:0">No run selected</h2>
         <div class="viewtools">
+          <div class="seg small" id="zoomSeg" role="group" aria-label="Zoom" hidden title="Scroll to zoom, drag to pan, double-click to zoom in (shift: out)">
+            <button data-z="out" aria-label="Zoom out" title="Zoom out">−</button><button data-z="level" disabled style="opacity:1;cursor:default;min-width:44px">×1</button><button data-z="in" aria-label="Zoom in" title="Zoom in">+</button><button data-z="reset" aria-label="Show everything" title="Show everything"><svg class="ic"><use href="#i-reset"/></svg></button>
+          </div>
           <div class="seg small" id="colorSeg" role="group" aria-label="Colour cells by"></div>
           <div class="seg small" id="sortSeg" role="group" aria-label="Order targets by" hidden></div>
           <form class="finder" id="finder" role="search">
@@ -871,7 +874,7 @@ function verifyRunCb(run, quiet, resolve) {
   const w = new Worker("/verify-worker.js");
   S.worker = w;
   setBar("verBar", 0);
-  $("verLabel").textContent = `0 / ${fmtInt(run.solutions.length)}`;
+  $("verLabel").textContent = `0 / ${fmtInt(run.summary.solved)}`;
   $("verState").textContent = "";
   $("verFails").innerHTML = "";
   w.onmessage = async (e) => {
@@ -899,7 +902,7 @@ function verifyRunCb(run, quiet, resolve) {
     }
   };
   w.onerror = (e) => { $("verState").innerHTML = `<span class="bad">Could not start the verifier</span> (${esc(e.message || "mathjs failed to load")}).`; resolve(); };
-  w.postMessage({ run: { digits: cfg.digits, target: cfg.target, tiers: cfg.tiers }, solutions: run.solutions });
+  w.postMessage({ run: { digits: cfg.digits, target: cfg.target, tiers: cfg.tiers }, url: `/api/runs/${run.summary.id}/solutions.json` });
 }
 
 // ---------------------------------------------------------------- runs list
@@ -985,29 +988,53 @@ function renderRuns() {
 const runCache = new Map();
 async function loadRun(id) {
   if (runCache.has(id)) return runCache.get(id);
-  const [summary, solutions] = await Promise.all([api(`/api/runs/${id}/summary.json`), api(`/api/runs/${id}/solutions.json`)]);
+  // per-puzzle numbers come as one compact binary file; solution texts load on demand
+  const [summary, buf] = await Promise.all([
+    api(`/api/runs/${id}/summary.json`),
+    fetch(`/api/runs/${id}/grid`).then((r) => { if (!r.ok) throw new Error("could not load the run"); return r.arrayBuffer(); }),
+  ]);
   let verify = null;
   if (S.runs.find((r) => r.id === id)?.verify) {
     try { verify = await api(`/api/runs/${id}/verify.json`); } catch {}
   }
-  const d = summary.digits, n = 10 ** d;
-  const tiers = new Uint8Array(n);       // 0 = unsolved
-  const sol = new Array(n), alts = new Array(n);
-  const cost = new Uint16Array(n), count = new Uint16Array(n);   // 0 = not recorded (older runs)
-  for (const s of solutions) {
-    const i = Number(s.number);
-    tiers[i] = s.tier; sol[i] = s.solution;
-    if (s.cost != null) cost[i] = Math.min(65535, s.cost);
-    if (s.count != null) count[i] = s.count;
-    if (s.alts) alts[i] = s.alts.map((e) => [null, e]); // older runs: up to 4 inline, no costs
-  }
+  const dv = new DataView(buf);
+  if (String.fromCharCode(...new Uint8Array(buf, 0, 4)) !== "TXG1") throw new Error("unknown grid format");
+  const n = dv.getUint32(4, true), recorded = (dv.getUint32(8, true) & 1) === 1;
+  const tiers = new Uint8Array(buf, 16, n);          // 0 = unsolved
+  const len = new Uint8Array(buf, 16 + n, n);        // solution length (chars, max 255)
+  const cost = new Uint16Array(buf, 16 + 2 * n, n);
+  const count = new Uint16Array(buf, 16 + 4 * n, n);
   const slack = summary.config?.alt_slack;
-  // newer runs keep alternatives in solutions.alts.jsonl, fetched one puzzle at a time
-  const inline = solutions.some((s) => s.alts);
-  const run = { summary, solutions, verify, tiers, sol, alts, altsRemote: !inline, cost, count, n, T: summary.tier_names.length,
-    hasCost: solutions.length > 0 && solutions[0].cost != null, hasRarity: solutions.length > 0 && solutions[0].count != null && slack > 0, slack };
+  const run = { summary, verify, tiers, len, cost, count, n, T: summary.tier_names.length,
+    sol: new Array(n),    // solution texts: undefined = not fetched, null = loading
+    alts: new Array(n),   // alternatives: same
+    hasCost: recorded, hasRarity: recorded && slack > 0, slack };
   runCache.set(id, run);
   return run;
+}
+/** Solution text of puzzle i ("" if unsolved), or null while it loads. */
+function solOf(run, i) {
+  if (!run.tiers[i]) return "";
+  const v = run.sol[i];
+  if (v !== undefined) return v;
+  run.sol[i] = null;
+  (run.solQueue ??= new Set()).add(i);
+  if (!run.solTimer) run.solTimer = setTimeout(() => flushSols(run), 0);
+  return null;
+}
+/** Fetch every queued text in batches, then refresh whatever shows them. */
+async function flushSols(run) {
+  const want = [...run.solQueue];
+  run.solQueue.clear(); run.solTimer = null;
+  for (let k = 0; k < want.length; k += 1000) {
+    const part = want.slice(k, k + 1000);
+    let texts = [];
+    try { texts = await api(`/api/runs/${run.summary.id}/sols?n=${part.join(",")}`); } catch {}
+    part.forEach((i, j) => (run.sol[i] = texts[j] ?? "?"));
+    if (S.sel != null && part.includes(S.sel)) renderTrees();
+    if (HM.hover != null && part.includes(HM.hover) && tip.style.display === "block") tip.innerHTML = tipHTML(HM.hover);
+    if (!$("changed").hidden) renderChanged();
+  }
 }
 async function selectRun(slot, id) {
   const run = await loadRun(id);
@@ -1015,6 +1042,7 @@ async function selectRun(slot, id) {
   if (slot === "A") { S.A = run; if (S.B && S.B.summary.id === id) S.B = null; }
   else { if (S.A && S.A.summary.id === id) return; S.B = run; }
   S.alt = { A: 0, B: 0 }; S.changedLimit = 200;
+  if (slot === "A") HM.view = null; // a new run starts zoomed out
   if (S.sel !== null && S.sel >= (S.A?.n ?? 0)) S.sel = null;
   S.focus = new Set();
   renderRuns();
@@ -1035,30 +1063,55 @@ function geometry(digits, width) {
       rowDigits: Math.floor(digits / 2), colDigits: Math.ceil(digits / 2), labelW, top,
       width: labelW + cols * cell, height: top + rows * cell + 4 };
   }
+  return boardGeometry(digits, width, labelW, top);
+}
+/**
+ * 5 and 6 digits are drawn as pixels on a "board" (in cell units) seen through a
+ * zoomable window (HM.view). 6 digits: one 1000x1000 grid, rows = first three digits.
+ * 5 digits: one 100x100 panel per first digit, laid out in rows with gaps and a label strip.
+ */
+function boardGeometry(digits, width, labelW, top) {
+  let bw, bh, toBoard, fromBoard, rowOf, colOf, cols, rowDigits, colDigits;
+  const labels = [];
   if (digits === 6) {
-    // one 1000x1000 grid (rows: first three digits, columns: last three), drawn as pixels
-    const rows = 1000, cols = 1000, cell = Math.max(0.3, Math.min(2, (width - labelW) / cols));
-    return { digits, panels: [{ x: labelW, y: top, prefix: "" }], rows, cols, cell, perPanel: rows * cols,
-      rowDigits: 3, colDigits: 3, labelW, top, pixels: true,
-      width: Math.ceil(labelW + cols * cell), height: Math.ceil(top + rows * cell + 4) };
+    bw = bh = 1000; cols = 1000; rowDigits = colDigits = 3;
+    toBoard = (i) => [i % 1000, Math.floor(i / 1000)];
+    fromBoard = (x, y) => (x >= 0 && x < 1000 && y >= 0 && y < 1000 ? y * 1000 + x : null);
+    rowOf = (y) => y; colOf = (x) => x;
+  } else {
+    const per = width >= 700 ? 5 : 2, nr = Math.ceil(10 / per), GX = 8, GY = 14, PW = 100 + GX, PH = 100 + GY;
+    bw = per * PW - GX; bh = nr * PH; cols = 100; rowDigits = colDigits = 2;
+    toBoard = (i) => {
+      const q = Math.floor(i / 10000), k = i % 10000;
+      return [(q % per) * PW + (k % 100), Math.floor(q / per) * PH + GY + Math.floor(k / 100)];
+    };
+    fromBoard = (x, y) => {
+      const pc = Math.floor(x / PW), pr = Math.floor(y / PH), c = x - pc * PW, r = y - pr * PH - GY, q = pr * per + pc;
+      return x >= 0 && y >= 0 && pc < per && c < 100 && r >= 0 && r < 100 && q < 10 ? q * 10000 + r * 100 + c : null;
+    };
+    rowOf = (y) => { const r = (y % PH) - GY; return r >= 0 && r < 100 ? r : null; };
+    colOf = (x) => { const c = x % PW; return c < 100 ? c : null; };
+    for (let q = 0; q < 10; q++) labels.push({ x: (q % per) * PW, y: Math.floor(q / per) * PH + GY / 2, text: q + "····" });
   }
-  // 5 digits: ten 100x100 panels, one per leading digit
-  const perRow = width >= 1100 ? 5 : width >= 660 ? 3 : 2, gap = 14, rows = 100, cols = 100;
-  const cell = Math.max(1, Math.floor((width - labelW - gap * (perRow - 1)) / (perRow * cols)));
-  const pw = cols * cell, ph = rows * cell, panels = [];
-  for (let p = 0; p < 10; p++) {
-    const r = Math.floor(p / perRow), c = p % perRow;
-    panels.push({ x: labelW + c * (pw + gap), y: top + r * (ph + top + 6), prefix: String(p) });
-  }
-  const nr = Math.ceil(10 / perRow);
-  return { digits, panels, rows, cols, cell, perPanel: 10000, rowDigits: 2, colDigits: 2, labelW, top,
-    width: labelW + perRow * pw + (perRow - 1) * gap, height: nr * (ph + top + 6) };
+  const dw = Math.floor(Math.max(300, Math.min(2000, width - labelW))), dh = Math.round((dw * bh) / bw);
+  return { digits, pixels: true, panels: [{ x: labelW, y: top, prefix: "" }], bw, bh, dw, dh, cell: dw / bw, key: `${bw}x${bh}`,
+    toBoard, fromBoard, rowOf, colOf, labels, cols, perPanel: 10 ** digits, rowDigits, colDigits, labelW, top,
+    width: labelW + dw, height: top + dh + 4 };
 }
 function cellRect(g, i) {
+  if (g.pixels) {
+    const p = g.panels[0], v = HM.view, [bx, by] = g.toBoard(i);
+    return [p.x + (bx - v.x0) * g.cell, p.y + (by - v.y0) * g.cell];
+  }
   const p = g.panels[Math.floor(i / g.perPanel)], k = i % g.perPanel;
   return [p.x + (k % g.cols) * g.cell, p.y + Math.floor(k / g.cols) * g.cell];
 }
 function cellAt(g, x, y) {
+  if (g.pixels) {
+    const p = g.panels[0], v = HM.view;
+    if (x < p.x || y < p.y || x >= p.x + g.dw || y >= p.y + g.dh) return null;
+    return g.fromBoard(Math.floor(v.x0 + (x - p.x) / g.cell), Math.floor(v.y0 + (y - p.y) / g.cell));
+  }
   for (let pi = 0; pi < g.panels.length; pi++) {
     const p = g.panels[pi];
     const c = Math.floor((x - p.x) / g.cell), r = Math.floor((y - p.y) / g.cell);
@@ -1076,7 +1129,7 @@ const METRICS = {
 const colorMode = () => (comparing() || !S.A || (METRICS[S.colorBy].need && !S.A[METRICS[S.colorBy].need]) ? "tier" : S.colorBy);
 function metricValue(run, i, m) {
   if (!run.tiers[i]) return null;
-  return m === "cost" ? run.cost[i] : m === "len" ? run.sol[i].length : run.count[i];
+  return m === "cost" ? run.cost[i] : m === "len" ? run.len[i] : run.count[i];
 }
 let metricMemo = null;
 /** Bins for the current run + metric: {bins: [{lo, hi, color}] light→dark, idx: Int8Array (-1 unsolved)}. */
@@ -1134,6 +1187,7 @@ function legendKeyOf(i) {
 function renderView() {
   renderColorSeg();
   $("sortSeg").hidden = S.view !== "sweep";
+  if (S.view !== "run") $("zoomSeg").hidden = true;
   $("finder").hidden = S.view === "sweep";
   if (S.view === "sweep") { renderSweepView(); return; }
   $("hm").hidden = false; $("sweep").hidden = true;
@@ -1163,8 +1217,8 @@ function renderView() {
     2: "Rows: first digit, columns: second digit.",
     3: "Rows: first digit, columns: last two digits.",
     4: "Rows: first two digits, columns: last two digits.",
-    5: "One panel per first digit; rows: digits 2–3, columns: digits 4–5.",
-    6: "Rows: first three digits, columns: last three digits (one pixel per puzzle).",
+    5: "One panel per first digit; rows: digits 2–3, columns: digits 4–5. Scroll to zoom, drag to pan, double-click to zoom in.",
+    6: "Rows: first three digits, columns: last three digits. Scroll to zoom, drag to pan, double-click to zoom in.",
   }[d] + " Hover for the solution, click for its tree; click legend entries to filter.";
   $("viewTitle").insertAdjacentHTML("beforeend", ` <svg class="ic info" aria-hidden="true"><use href="#i-info"/><title>${esc(axis)}</title></svg>`);
   drawHeatmap();
@@ -1186,7 +1240,7 @@ function renderChanged() {
   rows.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]) || x[0] - y[0]);
   $("changedSum").textContent = `Changed puzzles (${fmtInt(rows.length)})` + (S.focus.size ? " · filtered" : "");
   const tierCell = (run, i) => (run.tiers[i] ? `T${run.tiers[i]}` : `<span style="color:${UNSOLVED}">–</span>`);
-  const exprCell = (run, i) => (run.tiers[i] ? esc(run.sol[i]) : `<span class="hint" style="margin:0">unsolved</span>`);
+  const exprCell = (run, i) => (run.tiers[i] ? esc(solOf(run, i) ?? "…") : `<span class="hint" style="margin:0">unsolved</span>`);
   $("changedTable").innerHTML = `<thead><tr><th>Puzzle</th><th>A</th><th>B</th><th title="Tier in B minus tier in A">Δ</th><th>A solution</th><th>B solution</th></tr></thead><tbody>` +
     rows.slice(0, S.changedLimit).map(([i, k]) => `<tr data-i="${i}"><td class="mono">${pad(i)}</td><td>${tierCell(S.A, i)}</td><td>${tierCell(S.B, i)}</td>
       <td class="${k > 0 ? "dh" : "de"}">${k > 0 ? "+" : "−"}${Math.abs(k)}</td><td class="mono x">${exprCell(S.A, i)}</td><td class="mono x">${exprCell(S.B, i)}</td></tr>`).join("") + `</tbody>`;
@@ -1198,6 +1252,12 @@ function renderChanged() {
   more.hidden = rows.length <= S.changedLimit;
   more.textContent = `Show more (${fmtInt(rows.length - S.changedLimit)} left)`;
 }
+$("zoomSeg").onclick = (e) => {
+  const z = e.target.closest("button")?.dataset.z;
+  if (z === "in") zoomAt(1 / 2);
+  else if (z === "out") zoomAt(2);
+  else if (z === "reset") { HM.view = fullView(); paintPixels(); }
+};
 $("changedMore").onclick = () => { S.changedLimit += 500; renderChanged(); };
 
 // ---------------------------------------------------------------- target sweep chart
@@ -1376,21 +1436,21 @@ function drawHeatmap() {
   const dim = css("--grid");
   if (g.pixels) {
     // a million cells: write pixels into one image, then scale it onto the panel
-    const img = new ImageData(g.cols, g.rows), px = img.data, rgb = new Map();
+    const img = new ImageData(g.bw, g.bh), px = img.data, rgb = new Map(); // gaps stay transparent
     for (let i = 0; i < A.n; i++) {
       const focused = S.focus.size === 0 || S.focus.has(legendKeyOf(i));
       const hex = focused ? cellColor(i, col) : dim;
       let c = rgb.get(hex);
       if (!c) { c = hex2rgb(hex).map((v) => Math.round(v * 255)); rgb.set(hex, c); }
-      const o = i * 4;
+      const [bx, by] = g.toBoard(i), o = (by * g.bw + bx) * 4;
       px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
     }
-    const off = document.createElement("canvas");
-    off.width = g.cols; off.height = g.rows;
-    off.getContext("2d").putImageData(img, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    const p = g.panels[0];
-    ctx.drawImage(off, p.x, p.y, g.cols * g.cell, g.rows * g.cell);
+    HM.off = document.createElement("canvas");
+    HM.off.width = g.bw; HM.off.height = g.bh;
+    HM.off.getContext("2d").putImageData(img, 0, 0);
+    if (HM.view?.key !== g.key) HM.view = fullView(); // new run, or the layout changed
+    paintPixels();
+    return;
   } else {
     for (let i = 0; i < A.n; i++) {
       const [x, y] = cellRect(g, i);
@@ -1398,6 +1458,7 @@ function drawHeatmap() {
       ctx.fillStyle = focused ? cellColor(i, col) : dim;
       ctx.fillRect(x, y, g.cell - gap, g.cell - gap);
     }
+    $("zoomSeg").hidden = true; // only the 5- and 6-digit boards zoom
   }
   // axis labels (recessive)
   ctx.fillStyle = css("--muted");
@@ -1418,12 +1479,91 @@ function drawHeatmap() {
   }
   drawOverlay();
 }
+/** Draw the visible window of the board: cells, cell borders when zoomed in, axis labels. */
+function paintPixels() {
+  const g = HM.geom, v = HM.view, p = g.panels[0], vh = (v.w * g.bh) / g.bw;
+  const dpr = window.devicePixelRatio || 1, ctx = $("hmBase").getContext("2d");
+  g.cell = g.dw / v.w;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, g.width, g.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(HM.off, v.x0, v.y0, v.w, vh, p.x, p.y, g.dw, g.dh);
+  if (g.cell >= 8) {
+    // zoomed in: separate cells with thin surface-coloured lines
+    ctx.strokeStyle = css("--surface"); ctx.lineWidth = g.cell >= 20 ? 2 : 1;
+    ctx.beginPath();
+    for (let c = Math.ceil(v.x0); c <= v.x0 + v.w; c++) { const x = p.x + (c - v.x0) * g.cell; ctx.moveTo(x, p.y); ctx.lineTo(x, p.y + g.dh); }
+    for (let r = Math.ceil(v.y0); r <= v.y0 + vh; r++) { const y = p.y + (r - v.y0) * g.cell; ctx.moveTo(p.x, y); ctx.lineTo(p.x + g.dw, y); }
+    ctx.stroke();
+  }
+  ctx.font = "11px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = css("--muted");
+  const every = (n) => [1, 2, 5, 10, 20, 50, 100, 200].find((s) => s * g.cell >= n) ?? 500;
+  const rStep = every(14), cStep = every(g.colDigits * 8 + 10);
+  ctx.textAlign = "right";
+  for (let by = Math.max(0, Math.ceil(v.y0 - 0.5)); by < v.y0 + vh; by++) {
+    const r = g.rowOf(by);
+    if (r != null && r % rStep === 0) ctx.fillText(String(r).padStart(g.rowDigits, "0"), p.x - 5, p.y + (by + 0.5 - v.y0) * g.cell);
+  }
+  ctx.textAlign = "center";
+  for (let bx = Math.max(0, Math.ceil(v.x0 - 0.5)); bx < v.x0 + v.w; bx++) {
+    const c = g.colOf(bx);
+    if (c != null && c % cStep === 0) ctx.fillText(String(c).padStart(g.colDigits, "0"), p.x + (bx + 0.5 - v.x0) * g.cell, p.y - 9);
+  }
+  // 5 digits: each panel's first digit, in the strip above it (kept on screen while it shows)
+  ctx.textAlign = "left"; ctx.fillStyle = css("--ink-2");
+  ctx.font = "600 11px system-ui, -apple-system, 'Segoe UI', sans-serif";
+  for (const L of g.labels) {
+    const sx = p.x + (L.x - v.x0) * g.cell, sy = p.y + (L.y - v.y0) * g.cell, pw = 100 * g.cell, ph = 100 * g.cell;
+    if (sx + pw < p.x || sx > p.x + g.dw || sy + ph < p.y || sy > p.y + g.dh) continue;
+    ctx.fillText(L.text, Math.max(sx, p.x) + 2, Math.max(sy, p.y + 7));
+  }
+  renderZoom();
+  drawOverlay(HM.hover);
+}
+const fullView = () => ({ x0: 0, y0: 0, w: HM.geom.bw, key: HM.geom.key });
+/** Zoom the board by `factor` around screen point (sx, sy) (default: the centre). */
+function zoomAt(factor, sx, sy) {
+  const g = HM.geom, v = HM.view, p = g.panels[0];
+  if (!g?.pixels) return;
+  sx ??= p.x + g.dw / 2; sy ??= p.y + g.dh / 2;
+  const cx = v.x0 + (sx - p.x) / g.cell, cy = v.y0 + (sy - p.y) / g.cell;
+  const w = Math.max(12, Math.min(g.bw, v.w * factor)), cell = g.dw / w;
+  HM.view = clampView({ w, x0: cx - (sx - p.x) / cell, y0: cy - (sy - p.y) / cell });
+  paintPixels();
+}
+function clampView(v) {
+  const g = HM.geom, h = (v.w * g.bh) / g.bw;
+  return { w: v.w, x0: Math.max(0, Math.min(g.bw - v.w, v.x0)), y0: Math.max(0, Math.min(g.bh - h, v.y0)), key: g.key };
+}
+/** Pan (and zoom in to at most `w` cells wide) so puzzle i is in view. */
+function showCell(i, w) {
+  const g = HM.geom;
+  if (!g?.pixels) return;
+  const v = HM.view, [bx, by] = g.toBoard(i);
+  const nw = w ? Math.min(v.w, w) : v.w, nh = (nw * g.bh) / g.bw;
+  const inside = bx >= v.x0 && bx < v.x0 + nw && by >= v.y0 && by < v.y0 + nh;
+  if (inside && nw === v.w) return;
+  HM.view = clampView({ w: nw, x0: bx + 0.5 - nw / 2, y0: by + 0.5 - nh / 2 });
+  paintPixels();
+}
+function renderZoom() {
+  const el = $("zoomSeg"), g = HM.geom;
+  el.hidden = !(g?.pixels && S.view === "run");
+  if (el.hidden) return;
+  const zoomedOut = HM.view.w >= g.bw;
+  el.querySelector("[data-z=level]").textContent = `×${Math.round(g.bw / HM.view.w)}`;
+  el.querySelector("[data-z=out]").disabled = zoomedOut;
+  el.querySelector("[data-z=reset]").disabled = zoomedOut;
+}
 function drawOverlay(hover) {
   const g = HM.geom, over = $("hmOver");
   if (!g) return;
   const dpr = window.devicePixelRatio || 1, ctx = over.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, g.width, g.height);
+  if (g.pixels) { const p = g.panels[0]; ctx.save(); ctx.beginPath(); ctx.rect(p.x - 4, p.y - 4, g.dw + 8, g.dh + 8); ctx.clip(); }
   const ring = (i, w, color) => {
     const [x, y] = cellRect(g, i), s = Math.max(g.cell, 6), off = (s - g.cell) / 2;
     ctx.lineWidth = w; ctx.strokeStyle = color;
@@ -1431,6 +1571,7 @@ function drawOverlay(hover) {
   };
   if (hover != null && hover !== S.sel) ring(hover, 1.5, css("--ink-2"));
   if (S.sel != null) { ring(S.sel, 3, css("--surface")); ring(S.sel, 2, css("--focus")); }
+  if (g.pixels) ctx.restore();
 }
 const pad = (i) => String(i).padStart(S.A.summary.digits, "0");
 /** "cost 52 · 14 solutions within +10", or "" for runs saved before these were recorded. */
@@ -1445,7 +1586,7 @@ function tipHTML(i) {
   const one = (run, tag) => {
     const t = run.tiers[i];
     return `<div class="sol">${tag ? `<span class="lbl">${tag}</span> ` : ""}${t
-      ? `<b>T${t}</b> <span class="lbl">${esc(run.summary.tier_names[t - 1])}</span>${rarityText(run, i) ? ` <span class="lbl">· ${rarityText(run, i)}</span>` : ""}<br><span class="mono">${esc(run.sol[i])}</span>`
+      ? `<b>T${t}</b> <span class="lbl">${esc(run.summary.tier_names[t - 1])}</span>${rarityText(run, i) ? ` <span class="lbl">· ${rarityText(run, i)}</span>` : ""}<br><span class="mono">${esc(solOf(run, i) ?? "…")}</span>`
       : `<span style="color:${UNSOLVED};font-weight:600">unsolved</span>`}</div>`;
   };
   return `<div class="num mono">${num}</div>` + (comparing() ? one(A, "A") + one(S.B, "B") : one(A));
@@ -1454,18 +1595,49 @@ const hm = $("hm"), tip = $("tip");
 hm.addEventListener("mousemove", (e) => {
   if (!HM.geom) return;
   const r = hm.getBoundingClientRect();
+  if (HM.drag) {
+    const g = HM.geom, d = HM.drag, dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+    if (d.moved) {
+      HM.view = clampView({ w: HM.view.w, x0: d.x0 - dx / g.cell, y0: d.y0 - dy / g.cell });
+      tip.style.display = "none"; hm.style.cursor = "grabbing";
+      paintPixels();
+      return;
+    }
+  }
   const i = cellAt(HM.geom, e.clientX - r.left, e.clientY - r.top);
+  HM.hover = i;
   if (i == null || i >= S.A.n) { tip.style.display = "none"; drawOverlay(); hm.style.cursor = "default"; return; }
-  hm.style.cursor = "pointer";
+  hm.style.cursor = HM.geom.pixels && HM.view.w < HM.geom.bw ? "grab" : "pointer";
   tip.innerHTML = tipHTML(i);
   tip.style.display = "block";
   const tx = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8), ty = e.clientY + 16 + tip.offsetHeight > innerHeight ? e.clientY - tip.offsetHeight - 12 : e.clientY + 16;
   tip.style.left = tx + "px"; tip.style.top = ty + "px";
   drawOverlay(i);
 });
-hm.addEventListener("mouseleave", () => { tip.style.display = "none"; drawOverlay(); });
+hm.addEventListener("mouseleave", () => { HM.hover = null; tip.style.display = "none"; drawOverlay(); });
+hm.addEventListener("mousedown", (e) => {
+  if (!HM.geom?.pixels || e.button !== 0) return;
+  HM.drag = { x: e.clientX, y: e.clientY, x0: HM.view.x0, y0: HM.view.y0, moved: false };
+});
+addEventListener("mouseup", () => {
+  if (!HM.drag) return;
+  HM.dragged = HM.drag.moved; HM.drag = null;
+});
+hm.addEventListener("wheel", (e) => {
+  if (!HM.geom?.pixels) return;
+  e.preventDefault();
+  const r = hm.getBoundingClientRect();
+  zoomAt(e.deltaY < 0 ? 1 / 1.3 : 1.3, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+hm.addEventListener("dblclick", (e) => {
+  if (!HM.geom?.pixels) return;
+  const r = hm.getBoundingClientRect();
+  zoomAt(e.shiftKey ? 4 : 1 / 4, e.clientX - r.left, e.clientY - r.top);
+});
 hm.addEventListener("click", (e) => {
   if (!HM.geom) return;
+  if (HM.dragged) { HM.dragged = false; return; } // end of a pan, not a click
   const r = hm.getBoundingClientRect();
   const i = cellAt(HM.geom, e.clientX - r.left, e.clientY - r.top);
   if (i != null && i < S.A.n) select(i);
@@ -1478,13 +1650,13 @@ hm.addEventListener("keydown", (e) => {
   const cur = S.sel ?? 0;
   select(Math.max(0, Math.min(S.A.n - 1, cur + moves[e.key])));
 });
-function select(i) { if (S.sel !== i) S.alt = { A: 0, B: 0 }; S.sel = i; drawOverlay(); renderTrees(); writeHash(); }
+function select(i, zoomTo) { if (S.sel !== i) S.alt = { A: 0, B: 0 }; S.sel = i; showCell(i, zoomTo); drawOverlay(); renderTrees(); writeHash(); }
 function find() {
   const v = $("findNum").value.trim();
   if (!S.A) return;
   if (!/^\d+$/.test(v) || v.length !== S.A.summary.digits) { $("findNum").setCustomValidity(`Enter ${S.A.summary.digits} digits`); $("findNum").reportValidity(); return; }
   $("findNum").setCustomValidity("");
-  select(Number(v));
+  select(Number(v), 60); // on a zoomable heatmap, zoom in around it
   $("treeH").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 $("finder").onsubmit = (e) => { e.preventDefault(); find(); };
@@ -1571,8 +1743,10 @@ function treeSVG(run, root) {
 }
 /** Every known solution of puzzle i: [[cost|null, expr], ...], best first; null while loading. */
 function solutionsOf(run, i) {
-  const best = [run.hasCost ? run.cost[i] : null, run.sol[i]];
-  if (!run.altsRemote || !run.hasRarity || run.count[i] <= 1) return [best, ...(run.alts[i] ?? [])];
+  const text = solOf(run, i);
+  if (text === null) return null;
+  const best = [run.hasCost ? run.cost[i] : null, text];
+  if (!run.hasRarity || run.count[i] <= 1) return [best];
   if (run.alts[i] === undefined) {
     run.alts[i] = null; // loading
     api(`/api/runs/${run.summary.id}/alts/${pad(i)}`)
@@ -1602,6 +1776,7 @@ function treeBox(run, i, tag) {
   const head = `<h3>${tag ? tag + " · " : ""}${esc(run.summary.name || run.summary.id)}</h3>`;
   if (!run.tiers[i]) return `<div class="treebox">${head}<div class="expr"><b class="mono">${num}</b> <span style="color:${UNSOLVED};font-weight:600">unsolved</span> in this run</div></div>`;
   const list = solutionsOf(run, i);
+  if (list === null && run.sol[i] == null) return `<div class="treebox">${head}<div class="empty">Loading…</div></div>`;
   const all = list ?? [[run.hasCost ? run.cost[i] : null, run.sol[i]]];
   const k = Math.min(S.alt[slot] ?? 0, all.length - 1), expr = all[k][1];
   let t = run.tiers[i], svg = "", mark = "";
